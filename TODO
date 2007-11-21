@@ -1,0 +1,19 @@
+BUGS TO FIX TO MAKE IT ACTUALLY WORK
+- wget --server-response http://PATH/TO/LARGE/FILE
+  It constantly redirects over and over again rather than waiting.
+  FILE.tmp never gets larger than 8192 or 16384 bytes.
+- We MUST find a way so the client can begin downloading the file while the mirror
+  downloads the file.  Any other reverse proxy server would allow this.  This might
+  be difficult to implement (perhaps impossible with mod_python?) but this might be
+  the only sane way to fix the previous problem.
+- Even if apache:apache owns DocumentRoot, SELinux denies by default.
+  Need sane solution.
+
+
+TODO
+- implement upstream fallback
+- mirror-monitord PHASE I
+	Check files in local cache against upstream web server.  If 404, delete locally.
+- mirror-monitord PHASE II
+	Parse repomd.xml and other *.xml to intelligently know when to expire files
+	instead of querying the upstream server during every client download.
