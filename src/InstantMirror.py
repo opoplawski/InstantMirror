@@ -82,15 +82,7 @@ def handler(req):
    dir = os.path.dirname(local)
    if not os.path.exists(dir):
       os.makedirs(dir)
-   if isdir:
-      urllib.urlretrieve(upstream, local + ".tmp")
-      if os.path.exists(local):
-         os.unlink(local)
-      os.rename(local + ".tmp", local)
-      os.utime(local, (mtime,) * 2)
-      req.internal_redirect(req.uri + "index.html")
-
-   if os.path.exists(local) and os.stat(local).st_mtime >= mtime:
+   if not isdir and os.path.exists(local) and os.stat(local).st_mtime >= mtime:
       return mod_python.apache.DECLINED
 
    if ctype:
