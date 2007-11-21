@@ -17,7 +17,7 @@ install:
 	
 	# mod_python script
 	mkdir -p ${DESTDIR}${SITELIB}
-	install -m 644 src/InstantMirror.py ${SITELIB}
+	install -m 644 src/InstantMirror.py ${DESTDIR}${SITELIB}
 	# %config(noreplace) Apache configuration file
 	mkdir -p ${DESTDIR}/etc/httpd/conf.d/
 	install -m 644 src/InstantMirror.httpd.conf ${DESTDIR}/etc/httpd/conf.d/
