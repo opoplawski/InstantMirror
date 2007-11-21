@@ -1,12 +1,4 @@
 BUGS TO FIX TO MAKE IT ACTUALLY WORK
-- Deal with clients that don't bother to receive the entire content from a
-  redirect response, causing infinite redirection for large-ish files
-  (wget 1.10.2 and lftp 3.5.14 at least).
-- We MUST find a way so the client can begin downloading the file while the mirror
-  downloads the file.  Any other reverse proxy server would allow this.  This might
-  be difficult to implement (perhaps impossible with mod_python?) but this would
-  eliminate a bunch of potential client incompatibilities due to the current hacky
-  keepalive mechanism (see above).
 - Even if apache:apache owns DocumentRoot, SELinux denies by default.
   Need sane solution.
 

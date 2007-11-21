@@ -14,7 +14,7 @@
 #
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_python, mod_python.util, urllib, os, shutil, time, calendar
+import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822
 
 """InstantMirror implements an automatically-populated mirror of static
 documents from an upstream server.  It was originally developed for
@@ -66,6 +66,8 @@ def handler(req):
       upstream = req.get_options()["InstantMirror.upstream"] + req.uri
       o = urllib.urlopen(upstream)
       mtime = calendar.timegm(o.headers.getdate("Last-Modified") or time.gmtime())
+      ctype = o.headers.get("Content-Type")
+      clen = o.headers.get("Content-Length")
       isdir = o.url.endswith("/")
    except:
       return mod_python.apache.DECLINED
@@ -91,30 +93,21 @@ def handler(req):
    if os.path.exists(local) and os.stat(local).st_mtime >= mtime:
       return mod_python.apache.DECLINED
 
-   # For simplicity's sake, we download the entire file from the
-   # upstream server before sending any file data to the client.
-   # Unfortunately some clients time out if they don't see any data
-   # for 30 seconds or so.  The not-so-simple solution implemented
-   # here is to send a temporary redirect response header and
-   # periodically send dots to the client to prevent it from timing
-   # out (although this doesn't work for some clients like wget and
-   # lftp).  When the file is finally mirrored, the client follows the
-   # redirect and we let Apache deal with it.  Ultimately we should
-   # behave like a good proxy and stream data directly from upstream
-   # to the client.
-   req.err_headers_out["Location"] = "http://" + req.server.server_hostname + req.uri
-   req.status = mod_python.apache.HTTP_MOVED_TEMPORARILY
-   req.write("InstantMirror retrieving %s" % upstream)
-   req.lastdot = time.time()
-   def writedot(*args):
-      t = time.time()
-      if t > req.lastdot + 10:
-         req.write(".")
-         req.lastdot = t
-   urllib.urlretrieve(upstream, local + ".tmp", writedot)
+   if ctype:
+      req.content_type = ctype
+   if clen:
+      req.headers_out["Content-Length"] = clen
+   req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
+   f = file(local + ".tmp", "w")
+   while True:
+      data = o.read(1024)
+      if len(data) < 1:
+         break
+      req.write(data)
+      f.write(data)
+   f.close()
    if os.path.exists(local):
       os.unlink(local)
    os.rename(local + ".tmp", local)
    os.utime(local, (mtime,) * 2)
-   req.write("done!\n")
    return mod_python.apache.OK
