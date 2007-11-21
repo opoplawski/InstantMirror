@@ -53,6 +53,11 @@ export_tree() {
     bzr export $BUILDPATH
 }
 
+export_changelog() {
+    echo "Exporting Changelog"
+    bzr log > $BUILDPATH/Changelog
+}
+
 mktbz() {
     cd /tmp
     tar cjvf $BUILDPATH.tar.bz2 $RELEASE
@@ -68,6 +73,7 @@ case $1 in
         check
         tag
         export_tree
+        export_changelog
         autogen
         mktbz
         ;;
@@ -75,6 +81,7 @@ case $1 in
         clean
         check
         export_tree
+        export_changelog
         autogen
         mktbz
         ;;
