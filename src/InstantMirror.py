@@ -90,13 +90,30 @@ def handler(req):
 
    if os.path.exists(local) and os.stat(local).st_mtime >= mtime:
       return mod_python.apache.DECLINED
+
+   # For simplicity's sake, we download the entire file from the
+   # upstream server before sending any file data to the client.
+   # Unfortunately some clients time out if they don't see any data
+   # for 30 seconds or so.  The not-so-simple solution implemented
+   # here is to send a temporary redirect response header and
+   # periodically send dots to the client to prevent it from timing
+   # out (being careful not to send too much data, otherwise wget
+   # 1.10.2 closes the connection anyway).  When the file is finally
+   # mirrored, the client follows the redirect and we let Apache deal
+   # with it.  Ultimately we should behave like a good proxy and
+   # stream data directly from upstream to the client.
    req.err_headers_out["Location"] = "http://" + req.server.server_hostname + req.uri
+   req.err_headers_out["Keep-Alive"] = "yes" # needed by wget
+   req.set_content_length(4096) # max accepted by wget for redirects
    req.status = mod_python.apache.HTTP_MOVED_TEMPORARILY
    req.write("InstantMirror retrieving %s" % upstream)
-   # Keep feeding dots to the client so it doesn't time out while we
-   # download a huge file from upstream
-   urllib.urlretrieve(upstream, local + ".tmp",
-                      lambda *args: req.write("."))
+   req.lastdot = time.time()
+   def writedot(*args):
+      t = time.time()
+      if t > req.lastdot + 10:
+         req.write(".")
+         req.lastdot = t
+   urllib.urlretrieve(upstream, local + ".tmp", writedot)
    if os.path.exists(local):
       os.unlink(local)
    os.rename(local + ".tmp", local)
