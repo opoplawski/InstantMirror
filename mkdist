@@ -26,8 +26,6 @@ clean() {
         fi
         echo "INFO: removing bzipped source $BUILDPATH.tar.bz2"
         rm -rf $BUILDPATH.tar.bz2
-        echo "INFO: removing gzipped source $BUILDPATH.tar.gz"
-        rm -rf $BUILDPATH.tar.gz
     }
 
 check() {
@@ -55,13 +53,6 @@ export_tree() {
     bzr export $BUILDPATH
 }
 
-mktgz() {
-    cd /tmp
-    tar czvf $BUILDPATH.tar.gz $RELEASE
-    cd -
-    echo "INFO: created gzipped source tarball in $BUILDPATH.tar.gz"
-}
-
 mktbz() {
     cd /tmp
     tar cjvf $BUILDPATH.tar.bz2 $RELEASE
@@ -78,7 +69,6 @@ case $1 in
         tag
         export_tree
         autogen
-        mktgz
         mktbz
         ;;
      --force)
@@ -86,7 +76,6 @@ case $1 in
         check
         export_tree
         autogen
-        mktgz
         mktbz
         ;;
      --tag)
