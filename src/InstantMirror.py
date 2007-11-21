@@ -73,7 +73,8 @@ def handler(req):
    local = req.document_root() + req.uri
    if isdir:
       if not req.uri.endswith("/"):
-         mod_python.util.redirect(req, req.uri + "/")
+         mod_python.util.redirect(req, "http://" + req.server.server_hostname
+                                  + req.uri + "/")
       local = os.path.join(local, "index.html")
       
    dir = os.path.dirname(local)
@@ -85,11 +86,11 @@ def handler(req):
          os.unlink(local)
       os.rename(local + ".tmp", local)
       os.utime(local, (mtime,) * 2)
-      req.internal_redirect(os.path.join(req.uri, "index.html"))
+      req.internal_redirect(req.uri + "index.html")
 
    if os.path.exists(local) and os.stat(local).st_mtime >= mtime:
       return mod_python.apache.DECLINED
-   req.err_headers_out["Location"] = req.uri
+   req.err_headers_out["Location"] = "http://" + req.server.server_hostname + req.uri
    req.status = mod_python.apache.HTTP_MOVED_TEMPORARILY
    req.write("InstantMirror retrieving %s" % upstream)
    # Keep feeding dots to the client so it doesn't time out while we
