@@ -97,14 +97,12 @@ def handler(req):
    # for 30 seconds or so.  The not-so-simple solution implemented
    # here is to send a temporary redirect response header and
    # periodically send dots to the client to prevent it from timing
-   # out (being careful not to send too much data, otherwise wget
-   # 1.10.2 closes the connection anyway).  When the file is finally
-   # mirrored, the client follows the redirect and we let Apache deal
-   # with it.  Ultimately we should behave like a good proxy and
-   # stream data directly from upstream to the client.
+   # out (although this doesn't work for some clients like wget and
+   # lftp).  When the file is finally mirrored, the client follows the
+   # redirect and we let Apache deal with it.  Ultimately we should
+   # behave like a good proxy and stream data directly from upstream
+   # to the client.
    req.err_headers_out["Location"] = "http://" + req.server.server_hostname + req.uri
-   req.err_headers_out["Keep-Alive"] = "yes" # needed by wget
-   req.set_content_length(4096) # max accepted by wget for redirects
    req.status = mod_python.apache.HTTP_MOVED_TEMPORARILY
    req.write("InstantMirror retrieving %s" % upstream)
    req.lastdot = time.time()
