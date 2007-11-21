@@ -20,7 +20,7 @@ install:
 	install -m 644 src/InstantMirror.py ${DESTDIR}${SITELIB}
 	# %config(noreplace) Apache configuration file
 	mkdir -p ${DESTDIR}/etc/httpd/conf.d/
-	install -m 644 src/InstantMirror.httpd.conf ${DESTDIR}/etc/httpd/conf.d/
+	install -m 644 src/InstantMirror.httpd.conf ${DESTDIR}/etc/httpd/conf.d/InstantMirror.conf
 
 	### TODO: Implement daemon and init scripts
 	## daemon
