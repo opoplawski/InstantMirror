@@ -81,7 +81,7 @@ case $1 in
         autogen
         mktbz
         ;;
-     --force)
+     --test)
         clean
         check
         export_tree
