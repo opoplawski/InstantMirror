@@ -18,3 +18,9 @@ TODO
 - mirror-monitord PHASE II
 	Parse repomd.xml and other *.xml to intelligently know when to expire files
 	instead of querying the upstream server during every client download.
+
+THINK ABOUT
+- "offline mode" - continue to serve from cache if the upstream server is temporarily inaccessible
+  Good idea?
+  How do you know if you are offline?
+  How often do you check?
