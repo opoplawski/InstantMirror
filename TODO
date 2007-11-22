@@ -11,6 +11,7 @@ BUGS TO FIX TO MAKE IT ACTUALLY WORK
   Need to study how squid or varnish does it.
 
 TODO
+- use mktemp -d instead of a hardcoded temp directory
 - implement upstream fallback
 - mirror-monitord PHASE I
 	Check files in local cache against upstream web server.  If 404, delete locally.
