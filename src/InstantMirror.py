@@ -14,7 +14,8 @@
 #
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822
+import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822, string
+from random import Random
 
 """InstantMirror implements an automatically-populated mirror of static
 documents from an upstream server.  It was originally developed for
@@ -90,7 +91,8 @@ def handler(req):
    if clen:
       req.headers_out["Content-Length"] = clen
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
-   f = file(local + ".tmp", "w")
+   randomstring = '.imtmp.' + ''.join(Random().sample(string.letters+string.digits, 10))
+   f = file(local + randomstring, "w")
    while True:
       data = o.read(1024)
       if len(data) < 1:
