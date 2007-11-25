@@ -102,6 +102,6 @@ def handler(req):
    f.close()
    if os.path.exists(local):
       os.unlink(local)
-   os.rename(local + ".tmp", local)
+   os.rename(local + randomstring, local)
    os.utime(local, (mtime,) * 2)
    return mod_python.apache.OK
