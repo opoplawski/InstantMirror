@@ -14,7 +14,7 @@
 #
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822
+import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822, errno, fcntl, select
 
 """InstantMirror implements an automatically-populated mirror of static
 documents from an upstream server.  It was originally developed for
@@ -58,6 +58,15 @@ Ensure mod_python is installed and enabled, and that /mirrors is
 writable by the apache user.
 """
 
+def tryflock(f):
+   try:
+      fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      return True
+   except IOError, e:
+      if e.errno == errno.EWOULDBLOCK:
+         return False
+      raise
+
 def handler(req):
    if req.uri.endswith("/index.html"):
       return mod_python.apache.DECLINED
@@ -90,16 +99,32 @@ def handler(req):
    if clen:
       req.headers_out["Content-Length"] = clen
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
-   f = file(local + ".tmp", "w")
+
+   f = file("%s.tmp.%x" % (local, hash(local)), "a+")
+   pos = 0
    while True:
-      data = o.read(1024)
-      if len(data) < 1:
+      select.select([f], [], [], 1)
+      if tryflock(f):
+         # switch to master mode
          break
-      req.write(data)
-      f.write(data)
+      else:
+         # master still running: copy local data to client
+         data = f.read(1024)
+         req.write(data)
+         pos += len(data)
+   if pos == 0:
+      # master mode: download file, store data locally and copy to client
+      f.seek(0)
+      f.truncate()
+      while True:
+         data = o.read(1024)
+         if len(data) < 1:
+            break
+         req.write(data)
+         f.write(data)
+      if os.path.exists(local):
+         os.unlink(local)
+      os.rename(f.name, local)
+      os.utime(local, (mtime,) * 2)
    f.close()
-   if os.path.exists(local):
-      os.unlink(local)
-   os.rename(local + ".tmp", local)
-   os.utime(local, (mtime,) * 2)
    return mod_python.apache.OK
