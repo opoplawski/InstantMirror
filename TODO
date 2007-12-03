@@ -1,12 +1,26 @@
 BUGS TO FIX TO MAKE IT ACTUALLY WORK
 - Even if apache:apache owns DocumentRoot, SELinux denies by default.
-  Need sane solution.
-
+  Todd Zullinger suggested:
+  semanage fcontext -a -t httpd_sys_content_t "/InstantMirrorPath(/.*)?"
+  Investigate this.
+  Unfortunately, we have no automatable solution to this.
+- If InstantMirror is downloading a large file, concurrent clients
+  step on each other with bad results.  Difficult problem to solve
+  without the introduction of a tracking daemon and metadata?  
+  Need to think about options.
+  Need to study how squid or varnish does it.
 
 TODO
+- use mktemp -d instead of a hardcoded temp directory
 - implement upstream fallback
 - mirror-monitord PHASE I
 	Check files in local cache against upstream web server.  If 404, delete locally.
 - mirror-monitord PHASE II
 	Parse repomd.xml and other *.xml to intelligently know when to expire files
 	instead of querying the upstream server during every client download.
+
+THINK ABOUT
+- "offline mode" - continue to serve from cache if the upstream server is temporarily inaccessible
+  Good idea?
+  How do you know if you are offline?
+  How often do you check?
