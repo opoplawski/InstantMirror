@@ -4,23 +4,20 @@ BUGS TO FIX TO MAKE IT ACTUALLY WORK
   semanage fcontext -a -t httpd_sys_content_t "/InstantMirrorPath(/.*)?"
   Investigate this.
   Unfortunately, we have no automatable solution to this.
-- If InstantMirror is downloading a large file, concurrent clients
-  step on each other with bad results.  Difficult problem to solve
-  without the introduction of a tracking daemon and metadata?  
-  Need to think about options.
-  Need to study how squid or varnish does it.
 
 TODO
-- use mktemp -d instead of a hardcoded temp directory
-- implement upstream fallback
-- mirror-monitord PHASE I
-	Check files in local cache against upstream web server.  If 404, delete locally.
-- mirror-monitord PHASE II
-	Parse repomd.xml and other *.xml to intelligently know when to expire files
-	instead of querying the upstream server during every client download.
-
-THINK ABOUT
-- "offline mode" - continue to serve from cache if the upstream server is temporarily inaccessible
-  Good idea?
-  How do you know if you are offline?
-  How often do you check?
+- If multiple InstantMirror instances are downloading a large file, the
+  first instance (the master) appends to the local file while the other
+  instances (slaves) just copy from the local file to their clients.
+  The current implementation is lame and slaves are throttled by the
+  download speed of the master's client.  With clever use of select,
+  the master avoid blocking on writes to its client, allowing it to
+  download the upstream URL and append to the local file as fast as
+  possible.
+- Implement upstream fallback
+- Check files in local cache against upstream web server.  If 404, delete locally.
+- Parse repomd.xml and other *.xml to intelligently know when to expire files
+  instead of querying the upstream server during every client download.
+- Offline mode: if the upstream server is unavailable but the file exists locally,
+  InstantMirror lets Apache serve the local file.  This doesn't work so well for
+  directory requests, though.
