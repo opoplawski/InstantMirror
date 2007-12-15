@@ -3,7 +3,7 @@
 %{!?python_sitelib: %define python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
 
 Name:           InstantMirror
-Version:        0.4
+Version:        0.5
 Release:        0%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
@@ -49,6 +49,6 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %doc README TODO COPYING Changelog
 %{python_sitelib}/*
-%config(noreplace) %{_sysconfdir}/httpd/conf.d/InstantMirror.conf
+%config(noreplace) %{_sysconfdir}/httpd/conf.d/zz-InstantMirror.conf
 
 %changelog

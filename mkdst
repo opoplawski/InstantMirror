@@ -1,0 +1,29 @@
+#!/bin/sh
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+#
+# Copyright (c) 2007 Vagrant Cascadian
+# Copyright (c) 2007 Warren Togami
+
+# Copy this to the top level directory of your project, name it "mkdst".
+# The actual mkdst utility must be either in $PATH or ../mkdst/
+
+# Try mkdst in $PATH
+which mkdst > /dev/null 2>&1 && exec mkdst $@
+# Try mkdst in ../mkdst/
+[ -d ../mkdst/ ] && exec ../mkdst/mkdst $@
+
+# Neither exist.  Error out.
+echo "../mkdst not found, please put a copy in \$PATH or ../mkdst" > /dev/stderr
+exit 1
