@@ -1,20 +1,23 @@
 # NOTE: Do not bother keeping %changelog entries in this sample RPM spec
 
-%{!?python_sitelib: %define python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
+%if 0%{?rhel} && 0%{?rhel} <= 6
+%{!?__python2: %global __python2 /usr/bin/python2}
+%{!?python2_sitelib: %global python2_sitelib %(%{__python2} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
+%endif
 
 Name:           InstantMirror
-Version:        0.5
+Version:        0.6
 Release:        0%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
 Group:          System Environment/Daemons
 License:        GPLv2+
-URL:            https://hosted.fedoraproject.org/projects/InstantMirror
+URL:            https://github.com/opoplawski/InstantMirror
 Source0:        InstantMirror-%{version}.tar.bz2
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch
-BuildRequires:  python-devel
+BuildRequires:  python2-devel
 
 Requires:       mod_python
 
@@ -35,9 +38,6 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 %prep
 %setup -q
 
-%build
-echo "Nothing to build."
-
 %install
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
@@ -46,9 +46,8 @@ make install DESTDIR=$RPM_BUILD_ROOT
 rm -rf $RPM_BUILD_ROOT
 
 %files
-%defattr(-,root,root,-)
-%doc README TODO COPYING Changelog
-%{python_sitelib}/*
+%doc README.md TODO COPYING Changelog
+%{python2_sitelib}/*
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/zz-InstantMirror.conf
 
 %changelog
