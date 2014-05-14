@@ -95,12 +95,16 @@ def handler(req):
       req.content_type = ctype
    if clen:
       req.headers_out["Content-Length"] = clen
+   req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
    if crang:
       req.headers_out["Content-Range"] = crang
       req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
-   req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
-
-   if not crang:
+      while True:
+         data = o.read(1024)
+         if len(data) < 1:
+            break
+         req.write(data)
+   else:
       f = file("%s.tmp.%x" % (local, hash(local)), "a+")
 
       # This bit of complicated goop lets us optimize the case where
@@ -111,45 +115,28 @@ def handler(req):
       # implementation is pretty lame and the slave is throttled by the
       # download speed of the master's client.
       pos = 0
-      while True:
-         select.select([f], [], [], 1)
-         if tryflock(f):
-            # If we can flock the local file, then the master must have
-            # gone away; so we become the master
-            break
-         else:
-            # The master still running: copy local data to client
+      select.select([f], [], [], 1)
+      if tryflock(f):
+         # Master mode: download the upstream URL, store data locally and
+         # copy data to the client
+         f.seek(pos)
+         while True:
+            data = o.read(1024)
+            if len(data) < 1:
+               break
+            req.write(data)
+            f.write(data)
+         f.close()
+         if os.path.exists(local):
+            os.unlink(local)
+         os.rename(f.name, local)
+         os.utime(local, (mtime,) * 2)
+      else:
+         # We are the slave, read from the file
+         while pos < clen:
             data = f.read(1024)
             req.write(data)
             pos += len(data)
-
-      # Master mode: download the upstream URL, store data locally and
-      # copy data to the client
-      if pos > 0:
-         # If we have already copied some data to the client as a slave,
-         # we must either trash the first pos bytes of the upstream URL
-         # or re-request it with Range: pos- before continuing to append
-         # to the local file and copy data to the client.  Since that
-         # would require work and we're lazy, we just give up and let the
-         # client retry the whole download.
          f.close()
-         return mod_python.apache.OK
-      f.seek(pos)
-      f.truncate()
-
-   while True:
-      data = o.read(1024)
-      if len(data) < 1:
-         break
-      req.write(data)
-      if not crang:
-         f.write(data)
-
-   if not crang:
-      if os.path.exists(local):
-         os.unlink(local)
-      os.rename(f.name, local)
-      os.utime(local, (mtime,) * 2)
-      f.close()
 
    return mod_python.apache.OK
