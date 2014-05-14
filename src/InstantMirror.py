@@ -14,7 +14,7 @@
 #
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_python, mod_python.util, urllib, os, shutil, time, calendar, rfc822, string
+import mod_python, mod_python.util, urllib2, os, shutil, time, calendar, rfc822, string, sys, traceback
 from random import Random
 
 """InstantMirror implements an automatically-populated mirror of static
@@ -60,17 +60,23 @@ writable by the apache user.
 """
 
 def handler(req):
-   if req.uri.endswith("/index.html"):
+   if req.uri.endswith("/index.html") or req.uri.endswith("/"):
       return mod_python.apache.DECLINED
 
    try:
       upstream = req.get_options()["InstantMirror.upstream"] + req.uri
-      o = urllib.urlopen(upstream)
+      upreq = urllib2.Request(upstream)
+      if req.headers_in.has_key('Range'):
+         upreq.add_header('Range', req.headers_in.get('Range'))
+      o = urllib2.urlopen(upreq)
       mtime = calendar.timegm(o.headers.getdate("Last-Modified") or time.gmtime())
       ctype = o.headers.get("Content-Type")
       clen = o.headers.get("Content-Length")
+      crang = o.headers.get("Content-Range")
       isdir = o.url.endswith("/")
    except:
+      traceback.print_exc(file=sys.stderr)
+      sys.stderr.flush
       return mod_python.apache.DECLINED
 
    local = req.document_root() + req.uri
@@ -90,18 +96,26 @@ def handler(req):
       req.content_type = ctype
    if clen:
       req.headers_out["Content-Length"] = clen
+   if crang:
+      req.headers_out["Content-Range"] = crang
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
-   randomstring = '.imtmp.' + ''.join(Random().sample(string.letters+string.digits, 10))
-   f = file(local + randomstring, "w")
+
+   if not crang:
+      randomstring = '.imtmp.' + ''.join(Random().sample(string.letters+string.digits, 10))
+      f = file(local + randomstring, "w")
+
    while True:
       data = o.read(1024)
       if len(data) < 1:
          break
       req.write(data)
-      f.write(data)
-   f.close()
-   if os.path.exists(local):
-      os.unlink(local)
-   os.rename(local + randomstring, local)
-   os.utime(local, (mtime,) * 2)
+      if not crang:
+         f.write(data)
+
+   if not crang:
+      f.close()
+      if os.path.exists(local):
+         os.unlink(local)
+      os.rename(local + randomstring, local)
+      os.utime(local, (mtime,) * 2)
    return mod_python.apache.OK
