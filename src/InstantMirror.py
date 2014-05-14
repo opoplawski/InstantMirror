@@ -98,6 +98,7 @@ def handler(req):
       req.headers_out["Content-Length"] = clen
    if crang:
       req.headers_out["Content-Range"] = crang
+      req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
 
    if not crang:
