@@ -25,7 +25,7 @@ tree of static files.
 When a document request arrives, InstantMirror checks the last-modified
 time of the document at the upstream server.  If the upstream copy is
 newer than the local copy, or a local copy does not exist, it
-downloads the document and stores it locally before serving it to the
+downloads the document and stores it locally while serving it to the
 client.  If the upstream copy cannot be found, either because it does
 not exist or because the server is unreachable, the request is served
 directly from the local mirror.  Directory indexes are always
@@ -60,15 +60,15 @@ writable by the apache user.
 """
 
 def handler(req):
-   if req.uri.endswith("/index.html") or req.uri.endswith("/"):
-      return mod_python.apache.DECLINED
+   #if req.uri.endswith("/index.html") or req.uri.endswith("/"):
+   #   return mod_python.apache.DECLINED
 
    try:
       upstream = req.get_options()["InstantMirror.upstream"] + req.uri
       upreq = urllib2.Request(upstream)
       if req.headers_in.has_key('Range'):
          upreq.add_header('Range', req.headers_in.get('Range'))
-      o = urllib2.urlopen(upreq)
+      o = urllib2.urlopen(upreq, timeout=5)
       mtime = calendar.timegm(o.headers.getdate("Last-Modified") or time.gmtime())
       ctype = o.headers.get("Content-Type")
       clen = o.headers.get("Content-Length")
@@ -89,7 +89,7 @@ def handler(req):
    dir = os.path.dirname(local)
    if not os.path.exists(dir):
       os.makedirs(dir)
-   if not isdir and os.path.exists(local) and os.stat(local).st_mtime >= mtime:
+   if not isdir and os.path.exists(local) and int(os.stat(local).st_mtime) == mtime:
       return mod_python.apache.DECLINED
 
    if ctype:
