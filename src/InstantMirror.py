@@ -16,7 +16,7 @@
 
 import mod_python, mod_python.util, urllib2, os, shutil, time, calendar
 import rfc822, string, sys, traceback
-import errno, fcntl, select
+import errno, fcntl
 
 """InstantMirror implements an automatically-populated mirror of static
 documents from an upstream server.  It was originally developed for
@@ -62,15 +62,26 @@ def handler(req):
       upreq = urllib2.Request(upstream)
       if req.headers_in.has_key('Range'):
          upreq.add_header('Range', req.headers_in.get('Range'))
-      o = urllib2.urlopen(upreq, timeout=5)
+      o = urllib2.urlopen(upreq, timeout=10)
       mtime = calendar.timegm(o.headers.getdate("Last-Modified") or time.gmtime())
       ctype = o.headers.get("Content-Type")
       clen = o.headers.get("Content-Length")
       crang = o.headers.get("Content-Range")
       isdir = o.url.endswith("/")
+   except urllib2.HTTPError as e:
+      req.status = e.code
+      return mod_python.apache.OK
+   except urllib2.URLError as e:
+      # Handle timeouts
+      if type(e) == socket.timeout:
+         req.status = mod_python.apache.HTTP_REQUEST_TIME_OUT
+         return mod_python.apache.OK
+      traceback.print_exc(file=sys.stderr)
+      sys.stderr.flush()
+      return mod_python.apache.DECLINED
    except:
       traceback.print_exc(file=sys.stderr)
-      sys.stderr.flush
+      sys.stderr.flush()
       return mod_python.apache.DECLINED
 
    local = req.document_root() + req.uri
@@ -100,12 +111,14 @@ def handler(req):
       req.headers_out["Content-Range"] = crang
       req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
       while True:
-         data = o.read(1024)
+         data = o.read(4096)
          if len(data) < 1:
             break
          req.write(data)
    else:
-      f = file("%s.tmp.%x" % (local, hash(local)), "a+")
+      f = open("%s.tmp.%x" % (local, hash(local)), "a+", 4096)
+      # Start at the beginning if already being written to
+      f.seek(0)
 
       # This bit of complicated goop lets us optimize the case where
       # another instance of InstantMirror.py is already downloading the
@@ -114,14 +127,13 @@ def handler(req):
       # from the local file to our client.  Unfortunately this
       # implementation is pretty lame and the slave is throttled by the
       # download speed of the master's client.
-      pos = 0
-      select.select([f], [], [], 1)
       if tryflock(f):
+         sys.stderr.write("InstantMirror: master on %s.tmp.%x, clen = %d\n" % (local, hash(local), int(clen)))
+         sys.stderr.flush()
          # Master mode: download the upstream URL, store data locally and
          # copy data to the client
-         f.seek(pos)
          while True:
-            data = o.read(1024)
+            data = o.read(4096)
             if len(data) < 1:
                break
             req.write(data)
@@ -132,11 +144,23 @@ def handler(req):
          os.rename(f.name, local)
          os.utime(local, (mtime,) * 2)
       else:
+         sys.stderr.write("InstantMirror: slave on %s.tmp.%x, clen = %d\n" % (local, hash(local), int(clen)))
+         sys.stderr.flush()
          # We are the slave, read from the file
-         while pos < clen:
-            data = f.read(1024)
+         pos = 0
+         while pos < int(clen):
+            data = f.read(4096)
             req.write(data)
             pos += len(data)
+            # We will read 0 if at the end of the file, which might not be completed yet
+            if len(data) == 0:
+               # See if the master has gone away, and if so abort
+               if tryflock(f):
+                  sys.stderr.write("InstantMirror: slave exiting at pos = %d, clen = %d\n" % (pos, int(clen)))
+                  sys.stderr.flush()
+                  break
+               # Sleep for a bit to avoid spinning
+               time.sleep(0.01)
          f.close()
 
    return mod_python.apache.OK
