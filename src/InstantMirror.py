@@ -106,6 +106,8 @@ def handler(req):
       req.content_type = ctype
    if clen:
       req.headers_out["Content-Length"] = clen
+   else:
+      clen = 0
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
    if crang:
       req.headers_out["Content-Range"] = crang
