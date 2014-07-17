@@ -118,7 +118,8 @@ def handler(req):
             break
          req.write(data)
    else:
-      f = open("%s.tmp.%x" % (local, hash(local)), "a+", 4096)
+      tmpname = "%s.tmp.%x" % (local, hash(local))
+      f = open(tmpname, "a+", 4096)
       # Start at the beginning if already being written to
       f.seek(0)
 
@@ -135,7 +136,15 @@ def handler(req):
          # Master mode: download the upstream URL, store data locally and
          # copy data to the client
          while True:
-            data = o.read(4096)
+            try:
+               data = o.read(4096)
+            except:
+               # Something bad happened like a timeout, cleanup
+               f.close()
+               os.unlink(tmpname)
+               traceback.print_exc(file=sys.stderr)
+               sys.stderr.flush()
+               return mod_python.apache.DECLINED
             if len(data) < 1:
                break
             req.write(data)
