@@ -15,6 +15,7 @@
 # Copyright (c) 2007 Arastra, Inc.
 
 import mod_python, mod_python.util, urllib2, os, shutil, time, calendar
+import socket
 import rfc822, string, sys, traceback
 import errno, fcntl
 
