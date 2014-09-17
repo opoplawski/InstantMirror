@@ -98,8 +98,11 @@ def handler(req):
    if not os.path.exists(dir):
       os.makedirs(dir)
    # If the local file exists and is up-to-date, serve it to the client
-   if not isdir and os.path.exists(local) and int(os.stat(local).st_mtime) == mtime:
-      return mod_python.apache.DECLINED
+   if not isdir and os.path.exists(local):
+      stat = os.stat(local)
+      if int(stat.st_mtime) == mtime:
+      # and (clen is None or stat.st_size == clen):
+         return mod_python.apache.DECLINED
 
    # We are about to download the upstream URL and copy to the client; set up
    # relevant headers
@@ -139,17 +142,17 @@ def handler(req):
          while True:
             try:
                data = o.read(4096)
+               if len(data) < 1:
+                  break
+               req.write(data)
+               f.write(data)
             except:
-               # Something bad happened like a timeout, cleanup
+               # Something bad happened like a timeout or client closed connection, cleanup
                f.close()
                os.unlink(tmpname)
                traceback.print_exc(file=sys.stderr)
                sys.stderr.flush()
                return mod_python.apache.DECLINED
-            if len(data) < 1:
-               break
-            req.write(data)
-            f.write(data)
          f.close()
          if os.path.exists(local):
             os.unlink(local)
