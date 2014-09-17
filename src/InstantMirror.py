@@ -54,6 +54,10 @@ def tryflock(f):
       raise
 
 def handler(req):
+   # Allow local mirror to set robots policy
+   if req.uri.endswith("/robots.txt"):
+      return mod_python.apache.DECLINED
+
    #if req.uri.endswith("/index.html") or req.uri.endswith("/"):
    #   return mod_python.apache.DECLINED
 
