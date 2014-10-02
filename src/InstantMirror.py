@@ -54,8 +54,13 @@ def tryflock(f):
       raise
 
 def handler(req):
+   options = req.get_options()
    # Allow local mirror to set robots policy
    if req.uri.endswith("/robots.txt"):
+      if options.has_key("InstantMirror.norobots"):
+         req.write("User-agent: *\nDisallow: /\n")
+         return mod_python.apache.OK
+      # Otherwise return the local robots.txt
       return mod_python.apache.DECLINED
 
    #if req.uri.endswith("/index.html") or req.uri.endswith("/"):
@@ -63,7 +68,7 @@ def handler(req):
 
    # Open the upstream URL and get the headers
    try:
-      upstream = req.get_options()["InstantMirror.upstream"] + req.uri
+      upstream = options["InstantMirror.upstream"] + req.uri
       upreq = urllib2.Request(upstream)
       if req.headers_in.has_key('Range'):
          upreq.add_header('Range', req.headers_in.get('Range'))
