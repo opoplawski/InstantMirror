@@ -104,8 +104,16 @@ def handler(req):
       local = os.path.join(local, "index.html")
       
    dir = os.path.dirname(local)
+   # Try to avoid creating an already existing directory
    if not os.path.exists(dir):
-      os.makedirs(dir)
+      # But we can still have races, so handle the error gracefully
+      try:
+         os.makedirs(dir)
+      except OSError as e:
+         if e.errno == errno.EEXIST:
+            pass
+         else:
+            raise
    # If the local file exists and is up-to-date, serve it to the client
    if not isdir and os.path.exists(local):
       stat = os.stat(local)
