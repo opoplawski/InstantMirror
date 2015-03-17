@@ -6,7 +6,7 @@
 %endif
 
 Name:           InstantMirror
-Version:        0.6
+Version:        0.7
 Release:        0%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
@@ -14,7 +14,6 @@ Group:          System Environment/Daemons
 License:        GPLv2+
 URL:            https://github.com/opoplawski/InstantMirror
 Source0:        InstantMirror-%{version}.tar.bz2
-BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch
 BuildRequires:  python2-devel
@@ -39,12 +38,8 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 %setup -q
 
 %install
-rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
  
-%clean
-rm -rf $RPM_BUILD_ROOT
-
 %files
 %doc README.md TODO COPYING Changelog
 %{python2_sitelib}/*
