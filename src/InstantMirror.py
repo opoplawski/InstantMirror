@@ -18,13 +18,11 @@ import mod_python
 import mod_python.util
 import urllib2
 import os
-import shutil
 import time
 import calendar
 from mod_python import apache
 import socket
 import rfc822
-import string
 import sys
 import traceback
 import errno
@@ -51,7 +49,7 @@ rather than hashing the URL.  This allows the administrator to
 pre-populate portions of the mirrored tree quickly, for example from a
 DVD ISO acquired via BitTorrent.  InstantMirror makes certain
 assumptions about how the upstream server provides directory indexes,
-and does not deal with query strings (the part of the URL after the ?) 
+and does not deal with query strings (the part of the URL after the ?)
 at all.
 """
 
@@ -70,7 +68,7 @@ def handler(req):
     options = req.get_options()
     # Allow local mirror to set robots policy
     if req.uri.endswith("/robots.txt"):
-        if options.has_key("InstantMirror.norobots"):
+        if "InstantMirror.norobots" in options:
             req.write("User-agent: *\nDisallow: /\n")
             return mod_python.apache.OK
         # Otherwise return the local robots.txt
@@ -85,7 +83,7 @@ def handler(req):
             req.uri.replace("/index.html", "/")
         upreq = urllib2.Request(upstream)
         reqrange = None
-        if req.headers_in.has_key('Range'):
+        if 'Range' in req.headers_in:
             reqrange = req.headers_in.get('Range')
             upreq.add_header('Range', req.headers_in.get('Range'))
         o = urllib2.urlopen(upreq, timeout=10)
@@ -117,7 +115,8 @@ def handler(req):
         # store the local file as index.html
         if not req.uri.endswith("/") and not req.uri.endswith("/index.html"):
             req.log_error("InstantMirror: redirect to %s" %
-                          ("http://" + req.server.server_hostname + req.uri + "/"), apache.APLOG_WARNING)
+                          ("http://" + req.server.server_hostname + req.uri + "/"),
+                          apache.APLOG_WARNING)
             mod_python.util.redirect(req, "http://" + req.server.server_hostname
                                      + req.uri + "/")
         if not req.uri.endswith("/index.html"):
