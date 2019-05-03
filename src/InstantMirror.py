@@ -15,6 +15,7 @@
 # Copyright (c) 2007 Arastra, Inc.
 
 import mod_python, mod_python.util, urllib2, os, shutil, time, calendar
+from mod_python import apache
 import socket
 import rfc822, string, sys, traceback
 import errno, fcntl
@@ -68,15 +69,17 @@ def handler(req):
 
    # Open the upstream URL and get the headers
    try:
-      upstream = options["InstantMirror.upstream"] + req.uri
+      upstream = options["InstantMirror.upstream"] + req.uri.replace("/index.html","/")
       upreq = urllib2.Request(upstream)
+      reqrange = None
       if req.headers_in.has_key('Range'):
+         reqrange = req.headers_in.get('Range')
          upreq.add_header('Range', req.headers_in.get('Range'))
       o = urllib2.urlopen(upreq, timeout=10)
       mtime = calendar.timegm(o.headers.getdate("Last-Modified") or time.gmtime())
       ctype = o.headers.get("Content-Type")
       clen = o.headers.get("Content-Length")
-      crang = o.headers.get("Content-Range")
+      crange = o.headers.get("Content-Range")
       isdir = o.url.endswith("/")
    except urllib2.HTTPError as e:
       req.status = e.code
@@ -98,10 +101,14 @@ def handler(req):
    if isdir:
       # If the upstream URL ends with /, we assume it's a directory and
       # store the local file as index.html
-      if not req.uri.endswith("/"):
+      if not req.uri.endswith("/") and not req.uri.endswith("/index.html"):
+         req.log_error("InstantMirror: redirect to %s" %
+                       ("http://" + req.server.server_hostname + req.uri + "/"), apache.APLOG_WARNING)
          mod_python.util.redirect(req, "http://" + req.server.server_hostname
                                   + req.uri + "/")
-      local = os.path.join(local, "index.html")
+      if not req.uri.endswith("/index.html"):
+         local = os.path.join(local, "index.html")
+      req.log_error("InstantMirror: local=%s" % (local), apache.APLOG_WARNING)
       
    dir = os.path.dirname(local)
    # Try to avoid creating an already existing directory
@@ -119,6 +126,7 @@ def handler(req):
       stat = os.stat(local)
       if int(stat.st_mtime) == mtime:
       # and (clen is None or stat.st_size == clen):
+         req.log_error("InstantMirror: %s is up to date %d" % (local, mtime), apache.APLOG_WARNING)
          return mod_python.apache.DECLINED
 
    # We are about to download the upstream URL and copy to the client; set up
@@ -130,9 +138,10 @@ def handler(req):
    else:
       clen = 0
    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
-   if crang:
-      req.headers_out["Content-Range"] = crang
-      req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
+   if reqrange:
+      if crange:
+         req.headers_out["Content-Range"] = crange
+         req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
       while True:
          data = o.read(4096)
          if len(data) < 1:
@@ -152,8 +161,7 @@ def handler(req):
       # implementation is pretty lame and the slave is throttled by the
       # download speed of the master's client.
       if tryflock(f):
-         sys.stderr.write("InstantMirror: master on %s.tmp.%x, clen = %d\n" % (local, hash(local), int(clen)))
-         sys.stderr.flush()
+         req.log_error("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (local, hash(local), int(clen), mtime), apache.APLOG_WARNING)
          # Master mode: download the upstream URL, store data locally and
          # copy data to the client
          while True:
@@ -176,8 +184,7 @@ def handler(req):
          os.rename(f.name, local)
          os.utime(local, (mtime,) * 2)
       else:
-         sys.stderr.write("InstantMirror: slave on %s.tmp.%x, clen = %d\n" % (local, hash(local), int(clen)))
-         sys.stderr.flush()
+         req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (local, hash(local), int(clen)), apache.APLOG_WARNING)
          # We are the slave, read from the file
          pos = 0
          while pos < int(clen):
@@ -188,8 +195,7 @@ def handler(req):
             if len(data) == 0:
                # See if the master has gone away, and if so abort
                if tryflock(f):
-                  sys.stderr.write("InstantMirror: slave exiting at pos = %d, clen = %d\n" % (pos, int(clen)))
-                  sys.stderr.flush()
+                  req.log_error("InstantMirror: slave exiting at pos = %d, clen = %d" % (pos, int(clen)), apache.APLOG_ERR)
                   break
                # Sleep for a bit to avoid spinning
                time.sleep(0.01)
