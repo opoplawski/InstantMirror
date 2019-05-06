@@ -1,19 +1,12 @@
-# NOTE: Do not bother keeping %changelog entries in this sample RPM spec
-
-%if 0%{?rhel} && 0%{?rhel} <= 6
-%{!?__python2: %global __python2 /usr/bin/python2}
-%{!?python2_sitelib: %global python2_sitelib %(%{__python2} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
-%endif
-
 Name:           InstantMirror
-Version:        0.7
-Release:        0%{?dist}
+Version:        0.8
+Release:        1%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
 Group:          System Environment/Daemons
 License:        GPLv2+
 URL:            https://github.com/opoplawski/InstantMirror
-Source0:        InstantMirror-%{version}.tar.bz2
+Source0:        https://github.com/opoplawski/InstantMirror/archive/%{version}/%{name}-%{version}.tar.gz
 
 BuildArch:      noarch
 BuildRequires:  python2-devel
@@ -38,11 +31,22 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 %setup -q
 
 %install
-make install DESTDIR=$RPM_BUILD_ROOT
+%make_install
  
 %files
-%doc README.md TODO COPYING Changelog
+%doc README.md TODO COPYING
 %{python2_sitelib}/*
-%config(noreplace) %{_sysconfdir}/httpd/conf.d/zz-InstantMirror.conf
+%config(noreplace) %{_sysconfdir}/httpd/conf.d/InstantMirror.conf
 
 %changelog
+* Mon May  6 2019 Orion Poplawski 0.8-1
+- Update to 0.8
+
+* Tue Mar 17 2015 Orion Poplawski 0.7-1
+- Update to current running version
+
+* Thu Aug 23 2012 Orion Poplawski 0.6-1
+- Update to current running version
+
+* Thu Jun 25 2009 Orion Poplawski 0.5-1
+- Update to current running version
