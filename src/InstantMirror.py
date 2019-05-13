@@ -197,8 +197,17 @@ def handler(req):
             f.close()
             if os.path.exists(local):
                 os.unlink(local)
-            os.rename(f.name, local)
-            os.utime(local, (mtime,) * 2)
+            try:
+                os.rename(f.name, local)
+            # We still get races and sometimes have two masters, at which point we probably
+            # have a corrupt local file
+            except OSError as e:
+                if e.errno == errno.ENOENT and os.path.exists(local):
+                    os.unlink(local)
+                else:
+                    raise
+            else:
+                os.utime(local, (mtime,) * 2)
         else:
             req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
                 local, hash(local), int(clen)), apache.APLOG_WARNING)
