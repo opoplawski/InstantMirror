@@ -161,7 +161,10 @@ def handler(req):
             data = o.read(4096)
             if len(data) < 1:
                 break
-            req.write(data)
+            try:
+                req.write(data)
+            except IOError:
+                break
     else:
         tmpname = "%s.tmp.%x" % (local, hash(local))
         f = open(tmpname, "a+", 4096)
@@ -202,8 +205,9 @@ def handler(req):
             # We still get races and sometimes have two masters, at which point we probably
             # have a corrupt local file
             except OSError as e:
-                if e.errno == errno.ENOENT and os.path.exists(local):
-                    os.unlink(local)
+                if e.errno == errno.ENOENT:
+                    if os.path.exists(local):
+                        os.unlink(local)
                 else:
                     raise
             else:
@@ -215,7 +219,10 @@ def handler(req):
             pos = 0
             while pos < int(clen):
                 data = f.read(4096)
-                req.write(data)
+                try:
+                    req.write(data)
+                except IOError:
+                    break
                 pos += len(data)
                 # We will read 0 if at the end of the file, which might not be completed yet
                 if len(data) == 0:
