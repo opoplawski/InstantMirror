@@ -16,6 +16,7 @@
 
 import mod_python
 import mod_python.util
+import base64
 import urllib2
 import os
 import time
@@ -77,11 +78,22 @@ def handler(req):
     # if req.uri.endswith("/index.html") or req.uri.endswith("/"):
     #   return mod_python.apache.DECLINED
 
+    local = req.document_root() + req.uri
+
+    # Treat .rpm files as immutable, serve it if it exists
+    if req.uri.endswith(".rpm") and os.path.exists(local):
+        #req.log_error("InstantMirror: Immediately serving %s" %
+        #              (local), apache.APLOG_DEBUG)
+        return mod_python.apache.DECLINED
+
     # Open the upstream URL and get the headers
     try:
         upstream = options["InstantMirror.upstream"] + \
             req.uri.replace("/index.html", "/")
         upreq = urllib2.Request(upstream)
+        if 'InstantMirror.username' in options:
+            base64string = base64.encodestring('%s:%s' % (options['InstantMirror.username'], 'null')).replace('\n', '')
+            upreq.add_header("Authorization", "Basic %s" % base64string) 
         reqrange = None
         if 'Range' in req.headers_in:
             reqrange = req.headers_in.get('Range')
@@ -109,20 +121,19 @@ def handler(req):
         sys.stderr.flush()
         return mod_python.apache.DECLINED
 
-    local = req.document_root() + req.uri
     if isdir:
         # If the upstream URL ends with /, we assume it's a directory and
         # store the local file as index.html
         if not req.uri.endswith("/") and not req.uri.endswith("/index.html"):
             req.log_error("InstantMirror: redirect to %s" %
                           ("http://" + req.server.server_hostname + req.uri + "/"),
-                          apache.APLOG_WARNING)
+                          apache.APLOG_NOTICE)
             mod_python.util.redirect(req, "http://" + req.server.server_hostname
                                      + req.uri + "/")
         if not req.uri.endswith("/index.html"):
             local = os.path.join(local, "index.html")
         req.log_error("InstantMirror: local=%s" %
-                      (local), apache.APLOG_WARNING)
+                      (local), apache.APLOG_DEBUG)
 
     dir = os.path.dirname(local)
     # Try to avoid creating an already existing directory
@@ -141,7 +152,7 @@ def handler(req):
         if int(stat.st_mtime) == mtime:
             # and (clen is None or stat.st_size == clen):
             req.log_error("InstantMirror: %s is up to date %d" %
-                          (local, mtime), apache.APLOG_WARNING)
+                          (local, mtime), apache.APLOG_DEBUG)
             return mod_python.apache.DECLINED
 
     # We are about to download the upstream URL and copy to the client; set up
@@ -180,7 +191,7 @@ def handler(req):
         # download speed of the master's client.
         if tryflock(f):
             req.log_error("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
-                local, hash(local), int(clen), mtime), apache.APLOG_WARNING)
+                local, hash(local), int(clen), mtime), apache.APLOG_DEBUG)
             # Master mode: download the upstream URL, store data locally and
             # copy data to the client
             while True:
@@ -214,7 +225,7 @@ def handler(req):
                 os.utime(local, (mtime,) * 2)
         else:
             req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
-                local, hash(local), int(clen)), apache.APLOG_WARNING)
+                local, hash(local), int(clen)), apache.APLOG_DEBUG)
             # We are the slave, read from the file
             pos = 0
             while pos < int(clen):
