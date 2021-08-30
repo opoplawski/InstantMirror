@@ -95,9 +95,10 @@ def handler(req):
             base64string = base64.encodestring('%s:%s' % (options['InstantMirror.username'], 'null')).replace('\n', '')
             upreq.add_header("Authorization", "Basic %s" % base64string) 
         reqrange = None
-        if 'Range' in req.headers_in:
-            reqrange = req.headers_in.get('Range')
-            upreq.add_header('Range', req.headers_in.get('Range'))
+        # Pass along headers like "Accept", but not "Host" which will be us
+        for header in req.headers_in:
+            if header != 'Host':
+                upreq.add_header(header, req.headers_in.get(header))
         o = urllib2.urlopen(upreq, timeout=10)
         mtime = calendar.timegm(o.headers.getdate(
             "Last-Modified") or time.gmtime())
@@ -107,6 +108,9 @@ def handler(req):
         isdir = o.url.endswith("/")
     except urllib2.HTTPError as e:
         req.status = e.code
+        req.log_error("InstantMirror status: %s" % e.code)
+        req.log_error("InstantMirror info: %s" % e.info())
+        req.log_error("InstantMirror reponse: %s" % e.read())
         return mod_python.apache.OK
     except urllib2.URLError as e:
         # Handle timeouts
