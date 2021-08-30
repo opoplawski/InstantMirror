@@ -97,9 +97,11 @@ def handler(req):
         reqrange = None
         # Pass along headers like "Accept", but not:
         #  "Accept-Encoding" which can change the file format
+        #  "If-*" wich can possibly return nothing
+        #  "Range" wich can return just a portion of the file
         #  "Host" which will be us
         for header in req.headers_in:
-            if header not in ['Accept-Encoding', 'Host']:
+            if header in ['Accept', 'Content-Type', 'User-Agent']:
                 upreq.add_header(header, req.headers_in.get(header))
         o = urllib2.urlopen(upreq, timeout=10)
         mtime = calendar.timegm(o.headers.getdate(
