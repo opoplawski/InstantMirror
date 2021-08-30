@@ -59,7 +59,7 @@ def tryflock(f):
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
-    except IOError, e:
+    except IOError as e:
         if e.errno == errno.EWOULDBLOCK:
             return False
         raise
@@ -82,7 +82,7 @@ def handler(req):
 
     # Treat .rpm files as immutable, serve it if it exists
     if req.uri.endswith(".rpm") and os.path.exists(local):
-        #req.log_error("InstantMirror: Immediately serving %s" %
+        # req.log_error("InstantMirror: Immediately serving %s" %
         #              (local), apache.APLOG_DEBUG)
         return mod_python.apache.DECLINED
 
@@ -93,11 +93,13 @@ def handler(req):
         upreq = urllib2.Request(upstream)
         if 'InstantMirror.username' in options:
             base64string = base64.encodestring('%s:%s' % (options['InstantMirror.username'], 'null')).replace('\n', '')
-            upreq.add_header("Authorization", "Basic %s" % base64string) 
+            upreq.add_header("Authorization", "Basic %s" % base64string)
         reqrange = None
-        # Pass along headers like "Accept", but not "Host" which will be us
+        # Pass along headers like "Accept", but not:
+        #  "Accept-Encoding" which can change the file format
+        #  "Host" which will be us
         for header in req.headers_in:
-            if header != 'Host':
+            if header not in ['Accept-Encoding', 'Host']:
                 upreq.add_header(header, req.headers_in.get(header))
         o = urllib2.urlopen(upreq, timeout=10)
         mtime = calendar.timegm(o.headers.getdate(
