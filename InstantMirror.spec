@@ -1,5 +1,5 @@
 Name:           InstantMirror
-Version:        0.11
+Version:        0.12
 Release:        1%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
@@ -39,6 +39,9 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/InstantMirror.conf
 
 %changelog
+* Mon Aug 30 2021 Orion Poplawski 0.12-1
+- Update to 0.12
+
 * Mon Aug 30 2021 Orion Poplawski 0.11-1
 - Update to 0.11
 
