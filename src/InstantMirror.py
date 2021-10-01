@@ -98,11 +98,14 @@ def handler(req):
         # Pass along headers like "Accept", but not:
         #  "Accept-Encoding" which can change the file format
         #  "If-*" wich can possibly return nothing
-        #  "Range" wich can return just a portion of the file
         #  "Host" which will be us
         for header in req.headers_in:
             if header in ['Accept', 'Content-Type', 'User-Agent']:
                 upreq.add_header(header, req.headers_in.get(header))
+            # Range requests need special handling
+            if header == 'Range':
+                reqrange = req.headers_in.get(header)
+                upreq.add_header(header, reqrange)
         o = urllib2.urlopen(upreq, timeout=10)
         mtime = calendar.timegm(o.headers.getdate(
             "Last-Modified") or time.gmtime())
@@ -172,6 +175,8 @@ def handler(req):
     else:
         clen = 0
     req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
+
+    # If a range was requested, just return that but don't write anything to disk
     if reqrange:
         if crange:
             req.headers_out["Content-Range"] = crange
@@ -184,74 +189,77 @@ def handler(req):
                 req.write(data)
             except IOError:
                 break
-    else:
-        tmpname = "%s.tmp.%x" % (local, hash(local))
-        f = open(tmpname, "a+", 4096)
-        # Start at the beginning if already being written to
-        f.seek(0)
 
-        # This bit of complicated goop lets us optimize the case where
-        # another instance of InstantMirror.py is already downloading the
-        # URL from upstream: the other instance acts as the master,
-        # appending data to the local file; we act as a slave, copying data
-        # from the local file to our client.  Unfortunately this
-        # implementation is pretty lame and the slave is throttled by the
-        # download speed of the master's client.
-        if tryflock(f):
-            req.log_error("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
-                local, hash(local), int(clen), mtime), apache.APLOG_DEBUG)
-            # Master mode: download the upstream URL, store data locally and
-            # copy data to the client
-            while True:
-                try:
-                    data = o.read(4096)
-                    if len(data) < 1:
-                        break
-                    req.write(data)
-                    f.write(data)
-                except:
-                    # Something bad happened like a timeout or client closed connection, cleanup
-                    f.close()
-                    os.unlink(tmpname)
-                    traceback.print_exc(file=sys.stderr)
-                    sys.stderr.flush()
-                    return mod_python.apache.DECLINED
-            f.close()
-            if os.path.exists(local):
-                os.unlink(local)
+        return mod_python.apache.OK
+
+    # Download and serve file
+    tmpname = "%s.tmp.%x" % (local, hash(local))
+    f = open(tmpname, "a+", 4096)
+    # Start at the beginning if already being written to
+    f.seek(0)
+
+    # This bit of complicated goop lets us optimize the case where
+    # another instance of InstantMirror.py is already downloading the
+    # URL from upstream: the other instance acts as the master,
+    # appending data to the local file; we act as a slave, copying data
+    # from the local file to our client.  Unfortunately this
+    # implementation is pretty lame and the slave is throttled by the
+    # download speed of the master's client.
+    if tryflock(f):
+        req.log_error("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
+            local, hash(local), int(clen), mtime), apache.APLOG_DEBUG)
+        # Master mode: download the upstream URL, store data locally and
+        # copy data to the client
+        while True:
             try:
-                os.rename(f.name, local)
-            # We still get races and sometimes have two masters, at which point we probably
-            # have a corrupt local file
-            except OSError as e:
-                if e.errno == errno.ENOENT:
-                    if os.path.exists(local):
-                        os.unlink(local)
-                else:
-                    raise
-            else:
-                os.utime(local, (mtime,) * 2)
-        else:
-            req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
-                local, hash(local), int(clen)), apache.APLOG_DEBUG)
-            # We are the slave, read from the file
-            pos = 0
-            while pos < int(clen):
-                data = f.read(4096)
-                try:
-                    req.write(data)
-                except IOError:
+                data = o.read(4096)
+                if len(data) < 1:
                     break
-                pos += len(data)
-                # We will read 0 if at the end of the file, which might not be completed yet
-                if len(data) == 0:
-                    # See if the master has gone away, and if so abort
-                    if tryflock(f):
-                        req.log_error("InstantMirror: slave exiting at pos = %d, clen = %d" % (
-                            pos, int(clen)), apache.APLOG_ERR)
-                        break
-                    # Sleep for a bit to avoid spinning
-                    time.sleep(0.01)
-            f.close()
+                req.write(data)
+                f.write(data)
+            except:
+                # Something bad happened like a timeout or client closed connection, cleanup
+                f.close()
+                os.unlink(tmpname)
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
+                return mod_python.apache.DECLINED
+        f.close()
+        if os.path.exists(local):
+            os.unlink(local)
+        try:
+            os.rename(f.name, local)
+        # We still get races and sometimes have two masters, at which point we probably
+        # have a corrupt local file
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                if os.path.exists(local):
+                    os.unlink(local)
+            else:
+                raise
+        else:
+            os.utime(local, (mtime,) * 2)
+    else:
+        req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
+            local, hash(local), int(clen)), apache.APLOG_DEBUG)
+        # We are the slave, read from the file
+        pos = 0
+        while pos < int(clen):
+            data = f.read(4096)
+            try:
+                req.write(data)
+            except IOError:
+                break
+            pos += len(data)
+            # We will read 0 if at the end of the file, which might not be completed yet
+            if len(data) == 0:
+                # See if the master has gone away, and if so abort
+                if tryflock(f):
+                    req.log_error("InstantMirror: slave exiting at pos = %d, clen = %d" % (
+                        pos, int(clen)), apache.APLOG_ERR)
+                    break
+                # Sleep for a bit to avoid spinning
+                time.sleep(0.01)
+        f.close()
 
     return mod_python.apache.OK
