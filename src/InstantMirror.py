@@ -17,6 +17,8 @@
 import mod_python
 import mod_python.util
 import base64
+import httplib
+import ssl
 import urllib2
 import os
 import time
@@ -54,6 +56,23 @@ and does not deal with query strings (the part of the URL after the ?)
 at all.
 """
 
+class HTTPSClientAuthHandler(urllib2.HTTPSHandler):
+    def __init__(self, key, cert, context=None, cafile=None, capath=None):
+        if cafile:
+            context = ssl._create_stdlib_context(cert_reqs=ssl.CERT_REQUIRED,
+                                                 cafile=cafile,
+                                                 capath=capath)
+        urllib2.HTTPSHandler.__init__(self, context=context, check_hostname=True)
+        self.key = key
+        self.cert = cert
+    def https_open(self, req):
+        #Rather than pass in a reference to a connection class, we pass in
+        # a reference to a function which, for all intents and purposes,
+        # will behave as a constructor
+        return self.do_open(self.getConnection, req, context=self._context, check_hostname=self._check_hostname)
+    def getConnection(self, host, **http_conn_args):
+        return httplib.HTTPSConnection(host, key_file=self.key, cert_file=self.cert, **http_conn_args)
+
 
 def tryflock(f):
     try:
@@ -86,6 +105,12 @@ def handler(req):
         #              (local), apache.APLOG_DEBUG)
         return mod_python.apache.DECLINED
 
+    # Setup client SSL if needed
+    if 'InstantMirror.cert' in options:
+        cert_handler = HTTPSClientAuthHandler(options['InstantMirror.key'], options['InstantMirror.cert'], cafile=options['InstantMirror.cacert'])
+        opener = urllib2.build_opener(cert_handler)
+        urllib2.install_opener(opener)
+
     # Open the upstream URL and get the headers
     try:
         upstream = options["InstantMirror.upstream"] + \
@@ -106,7 +131,10 @@ def handler(req):
             if header == 'Range':
                 reqrange = req.headers_in.get(header)
                 upreq.add_header(header, reqrange)
-        o = urllib2.urlopen(upreq, timeout=10)
+        if 'InstantMirror.cacert' in options:
+            o = opener.open(upreq, timeout=10)
+        else:
+            o = urllib2.urlopen(upreq, timeout=10)
         mtime = calendar.timegm(o.headers.getdate(
             "Last-Modified") or time.gmtime())
         ctype = o.headers.get("Content-Type")
