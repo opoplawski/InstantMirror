@@ -83,6 +83,96 @@ def tryflock(f):
             return False
         raise
 
+class MasterIterable(object):
+    def __init__(self, input, output, local, mtime):
+        self.input = input
+        self.output = output
+        self.local = local
+        self.mtime = mtime
+    def __iter__(self):
+        return MasterIterator(self.input, self.output, self.local, self.mtime)
+    def __del__(self):
+        if os.path.exists(self.output.name):
+            os.unlink(self.output.name)
+
+class MasterIterator(object):
+    chunk_size = 4096
+    def __init__(self, input, output, local, mtime):
+        self.input = input
+        self.output = output
+        self.local = local
+        self.mtime = mtime
+    def __iter__(self):
+        return self
+    def next(self):
+        try:
+            data = self.input.read(self.chunk_size)
+            self.output.write(data)
+        except:
+            # Something bad happened like a timeout or client closed connection, cleanup
+            self.output.close()
+            os.unlink(self.output.name)
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            raise StopIteration
+        if len(data) < 1:
+            # Done reading input, move output into place
+            self.output.close()
+            if os.path.exists(self.local):
+                os.unlink(self.local)
+            try:
+                os.rename(self.output.name, self.local)
+            # We still get races and sometimes have two masters, at which point we probably
+            # have a corrupt local file
+            except OSError as e:
+                if e.errno == errno.ENOENT:
+                    if os.path.exists(self.local):
+                        os.unlink(self.local)
+                else:
+                    raise
+            else:
+                os.utime(self.local, (self.mtime,) * 2)
+            raise StopIteration
+        return data
+    __next__ = next # py3 compat
+
+
+class SlaveIterable(object):
+    def __init__(self, file, clen):
+        self.file = file
+        self.clen = clen
+    def __iter__(self):
+        return SlaveIterator(self.file, self.clen)
+
+
+class SlaveIterator(object):
+    chunk_size = 4096
+    def __init__(self, file, clen):
+        self.file = file
+        self.clen = clen
+        self.pos = 0
+    def __iter__(self):
+        return self
+    def next(self):
+        # Stop when we have reached the expected size of the file
+        if self.pos >= self.clen:
+            raise StopIteration
+        try:
+            data = self.file.read(self.chunk_size)
+        except IOError:
+            raise StopIteration
+        self.pos += len(data)
+        # We will read 0 if at the end of the file, which might not be completed yet
+        if len(data) == 0:
+            # See if the master has gone away, and if so abort
+            if tryflock(self.file):
+                print("InstantMirror: slave exiting at pos = %d" % (self.pos), file=environ['wsgi.errors'])
+                raise StopIteration
+            # Sleep for a bit to avoid spinning
+            time.sleep(0.01)
+        return data
+    __next__ = next # py3 compat
+
 
 def application(environ, start_response):
     req = Request(environ)
@@ -230,12 +320,10 @@ def application(environ, start_response):
         return res(environ, start_response)
 
     # Download and serve file
-    tmpname = "%s.tmp.%x" % (local, hash(local))
-    f = open(tmpname, "ab+", 4096)
+    f = open("%s.tmp.%x" % (local, hash(local)), "ab+", 4096)
     # Start at the beginning if already being written to
     f.seek(0)
 
-    body = bytearray()
     # This bit of complicated goop lets us optimize the case where
     # another instance of InstantMirror.py is already downloading the
     # URL from upstream: the other instance acts as the master,
@@ -246,60 +334,14 @@ def application(environ, start_response):
     if tryflock(f):
         print("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
             local, hash(local), int(clen), mtime), file=environ['wsgi.errors'])
-        # Master mode: download the upstream URL, store data locally and
-        # copy data to the client
-        while True:
-            try:
-                data = o.read(4096)
-                if len(data) < 1:
-                    break
-                body.extend(data)
-                f.write(data)
-            except:
-                # Something bad happened like a timeout or client closed connection, cleanup
-                f.close()
-                os.unlink(tmpname)
-                traceback.print_exc(file=sys.stderr)
-                sys.stderr.flush()
-                exc = HTTPError()
-                return exc(environ, start_response)
-        f.close()
-        if os.path.exists(local):
-            os.unlink(local)
-        try:
-            os.rename(f.name, local)
-        # We still get races and sometimes have two masters, at which point we probably
-        # have a corrupt local file
-        except OSError as e:
-            if e.errno == errno.ENOENT:
-                if os.path.exists(local):
-                    os.unlink(local)
-            else:
-                raise
-        else:
-            os.utime(local, (mtime,) * 2)
+        # Master
+        app_iter = MasterIterable(o, f, local, mtime)
     else:
         print("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
             local, hash(local), int(clen)), file=environ['wsgi.errors'])
         # We are the slave, read from the file
-        pos = 0
-        while pos < int(clen):
-            data = f.read(4096)
-            try:
-                body.extend(data)
-            except IOError:
-                break
-            pos += len(data)
-            # We will read 0 if at the end of the file, which might not be completed yet
-            if len(data) == 0:
-                # See if the master has gone away, and if so abort
-                if tryflock(f):
-                    print("InstantMirror: slave exiting at pos = %d, clen = %d" % (pos, int(clen)), file=environ['wsgi.errors'])
-                    break
-                # Sleep for a bit to avoid spinning
-                time.sleep(0.01)
-        f.close()
+        app_iter = SlaveIterable(f, int(clen))
 
-    res = Response(status = 200, headerlist = response_headers, body = bytes(body))
+    res = Response(status = 200, headerlist = response_headers, app_iter = app_iter)
     res.last_modified = mtime
     return res(environ, start_response)
