@@ -1,5 +1,5 @@
 Name:           InstantMirror
-Version:        0.14
+Version:        0.20
 Release:        1%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
@@ -9,9 +9,9 @@ URL:            https://github.com/opoplawski/InstantMirror
 Source0:        https://github.com/opoplawski/InstantMirror/archive/%{version}/%{name}-%{version}.tar.gz
 
 BuildArch:      noarch
-BuildRequires:  python2-devel
+BuildRequires:  python3-devel
 
-Requires:       mod_python
+Requires:       python3-webob
 
 %description
 Instantly create a HTTP mirror of remote static HTTP content.
@@ -35,10 +35,13 @@ filenames on the server filesystem.  This allows flexibility to do things like:
  
 %files
 %doc README.md TODO COPYING
-%{python2_sitelib}/*
+%{_datadir}/%{name}/
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/InstantMirror.conf
 
 %changelog
+* Sun Feb 06 2022 Orion Poplawski 0.20-1
+- Rewrite to use webob
+
 * Tue Jan 18 2022 Orion Poplawski 0.14-1
 - Update to 0.14
 

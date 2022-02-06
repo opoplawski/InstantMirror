@@ -14,18 +14,18 @@
 #
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_python
-import mod_python.util
+import mod_wsgi
+from webob import Request, Response
+from webob.exc import HTTPError, HTTPGatewayTimeout, HTTPNotFound, HTTPTemporaryRedirect
+from webob.static import FileApp
 import base64
-import httplib
+import http.client
 import ssl
-import urllib2
+import urllib.request, urllib.error, urllib.parse
 import os
 import time
 import calendar
-from mod_python import apache
 import socket
-import rfc822
 import sys
 import traceback
 import errno
@@ -56,13 +56,13 @@ and does not deal with query strings (the part of the URL after the ?)
 at all.
 """
 
-class HTTPSClientAuthHandler(urllib2.HTTPSHandler):
+class HTTPSClientAuthHandler(urllib.request.HTTPSHandler):
     def __init__(self, key, cert, context=None, cafile=None, capath=None):
         if cafile:
             context = ssl._create_stdlib_context(cert_reqs=ssl.CERT_REQUIRED,
                                                  cafile=cafile,
                                                  capath=capath)
-        urllib2.HTTPSHandler.__init__(self, context=context, check_hostname=True)
+        urllib.request.HTTPSHandler.__init__(self, context=context, check_hostname=True)
         self.key = key
         self.cert = cert
     def https_open(self, req):
@@ -71,7 +71,7 @@ class HTTPSClientAuthHandler(urllib2.HTTPSHandler):
         # will behave as a constructor
         return self.do_open(self.getConnection, req, context=self._context, check_hostname=self._check_hostname)
     def getConnection(self, host, **http_conn_args):
-        return httplib.HTTPSConnection(host, key_file=self.key, cert_file=self.cert, **http_conn_args)
+        return http.client.HTTPSConnection(host, key_file=self.key, cert_file=self.cert, **http_conn_args)
 
 
 def tryflock(f):
@@ -84,95 +84,104 @@ def tryflock(f):
         raise
 
 
-def handler(req):
-    options = req.get_options()
+def application(environ, start_response):
+    req = Request(environ)
+
+    local = environ['DOCUMENT_ROOT'] + req.path
+
     # Allow local mirror to set robots policy
-    if req.uri.endswith("/robots.txt"):
-        if "InstantMirror.norobots" in options:
-            req.write("User-agent: *\nDisallow: /\n")
-            return mod_python.apache.OK
-        # Otherwise return the local robots.txt
-        return mod_python.apache.DECLINED
-
-    # if req.uri.endswith("/index.html") or req.uri.endswith("/"):
-    #   return mod_python.apache.DECLINED
-
-    local = req.document_root() + req.uri
+    if req.path.endswith("/robots.txt"):
+        if "InstantMirror.norobots" in environ:
+            res = Response(status = 200, body = "User-agent: *\nDisallow: /\n")
+            return res(environ, start_response)
+        else:
+            # Use local robots.txt if it exists
+            if os.path.exists(local):
+                return FileApp(local)(environ, start_response)
+            else:
+                return HTTPNotFound()(environ, start_response)
 
     # Treat .rpm files as immutable, serve it if it exists
-    if req.uri.endswith(".rpm") and os.path.exists(local):
-        # req.log_error("InstantMirror: Immediately serving %s" %
-        #              (local), apache.APLOG_DEBUG)
-        return mod_python.apache.DECLINED
+    if req.path.endswith(".rpm") and os.path.exists(local):
+        #print("InstantMirror: Immediately serving %s" % (local), file=environ['wsgi.errors'])
+        return FileApp(local)(environ, start_response)
 
     # Setup client SSL if needed
-    if 'InstantMirror.cert' in options:
-        cert_handler = HTTPSClientAuthHandler(options['InstantMirror.key'], options['InstantMirror.cert'], cafile=options['InstantMirror.cacert'])
-        opener = urllib2.build_opener(cert_handler)
-        urllib2.install_opener(opener)
+    if 'InstantMirror.cert' in environ:
+        cert_handler = HTTPSClientAuthHandler(environ['InstantMirror.key'], environ['InstantMirror.cert'], cafile=environ['InstantMirror.cacert'])
+        opener = urllib.request.build_opener(cert_handler)
+        urllib.request.install_opener(opener)
 
     # Open the upstream URL and get the headers
     try:
-        upstream = options["InstantMirror.upstream"] + \
-            req.uri.replace("/index.html", "/")
-        upreq = urllib2.Request(upstream)
-        if 'InstantMirror.username' in options:
-            base64string = base64.encodestring('%s:%s' % (options['InstantMirror.username'], 'null')).replace('\n', '')
+        upstream = environ["InstantMirror.upstream"] + \
+            req.path.replace("/index.html", "/")
+        upreq = urllib.request.Request(upstream)
+        if 'InstantMirror.username' in environ:
+            base64string = base64.encodestring('%s:%s' % (environ['InstantMirror.username'], 'null')).replace('\n', '')
             upreq.add_header("Authorization", "Basic %s" % base64string)
         reqrange = None
         # Pass along headers like "Accept", but not:
         #  "Accept-Encoding" which can change the file format
         #  "If-*" wich can possibly return nothing
         #  "Host" which will be us
-        for header in req.headers_in:
+        for header in req.headers:
             if header in ['Accept', 'Content-Type', 'User-Agent']:
-                upreq.add_header(header, req.headers_in.get(header))
+                upreq.add_header(header, req.headers.get(header))
             # Range requests need special handling
             if header == 'Range':
-                reqrange = req.headers_in.get(header)
+                reqrange = req.headers.get(header)
                 upreq.add_header(header, reqrange)
-        if 'InstantMirror.cacert' in options:
+        if 'InstantMirror.cacert' in environ:
             o = opener.open(upreq, timeout=10)
         else:
-            o = urllib2.urlopen(upreq, timeout=10)
-        mtime = calendar.timegm(o.headers.getdate(
-            "Last-Modified") or time.gmtime())
+            o = urllib.request.urlopen(upreq, timeout=10)
+        if 'Last-Modified' in o.headers:
+            mtime = calendar.timegm(time.strptime(o.headers['Last-Modified'], '%a, %d %b %Y %H:%M:%S GMT'))
+        else:
+            mtime = calendar.timegm(time.gmtime())
         ctype = o.headers.get("Content-Type")
         clen = o.headers.get("Content-Length")
         crange = o.headers.get("Content-Range")
         isdir = o.url.endswith("/")
-    except urllib2.HTTPError as e:
-        req.status = e.code
-        req.log_error("InstantMirror status: %s" % e.code)
-        req.log_error("InstantMirror info: %s" % e.info())
-        req.log_error("InstantMirror reponse: %s" % e.read())
-        return mod_python.apache.OK
-    except urllib2.URLError as e:
+    except urllib.error.HTTPError as e:
+        print("InstantMirror status: %s" % e.code, file=environ['wsgi.errors'])
+        print("InstantMirror info: %s" % e.info(), file=environ['wsgi.errors'])
+        print("InstantMirror reponse: %s" % e.read(), file=environ['wsgi.errors'])
+        exc = HTTPError()
+        # TODO - This doesn't work to change exc 
+        exc.code = e.code
+        exc.detail = e.info 
+        return exc(environ, start_response)
+    except urllib.error.URLError as e:
         # Handle timeouts
         if type(e) == socket.timeout:
-            req.status = mod_python.apache.HTTP_REQUEST_TIME_OUT
-            return mod_python.apache.OK
+            return HTTPGatewayTimeout()(environ, start_response)
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        return mod_python.apache.DECLINED
-    except:
+        exc = HTTPError() 
+        # TODO - This doesn't work to change exc 
+        exc.code = e.code
+        exc.detail = e.info 
+        return exc(environ, start_response)
+    except Exception as e:
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        return mod_python.apache.DECLINED
+        return HTTPError()(environ, start_response)
 
     if isdir:
         # If the upstream URL ends with /, we assume it's a directory and
         # store the local file as index.html
-        if not req.uri.endswith("/") and not req.uri.endswith("/index.html"):
-            req.log_error("InstantMirror: redirect to %s" %
-                          ("http://" + req.server.server_hostname + req.uri + "/"),
-                          apache.APLOG_NOTICE)
-            mod_python.util.redirect(req, "http://" + req.server.server_hostname
-                                     + req.uri + "/")
-        if not req.uri.endswith("/index.html"):
+        if not req.path.endswith("/") and not req.path.endswith("/index.html"):
+            redir = "http://" + environ['SERVER_NAME'] + req.path + "/"
+            print("InstantMirror: redirect to %s" % redir, file=environ['wsgi.errors'])
+            exc = HTTPTemporaryRedirect(location=redir)
+            return exc(environ, start_response)
+
+        if not req.path.endswith("/index.html"):
             local = os.path.join(local, "index.html")
-        req.log_error("InstantMirror: local=%s" %
-                      (local), apache.APLOG_DEBUG)
+        print("InstantMirror: local=%s" %
+                      (local), file=environ['wsgi.errors'])
 
     dir = os.path.dirname(local)
     # Try to avoid creating an already existing directory
@@ -190,42 +199,43 @@ def handler(req):
         stat = os.stat(local)
         if int(stat.st_mtime) == mtime:
             # and (clen is None or stat.st_size == clen):
-            req.log_error("InstantMirror: %s is up to date %d" %
-                          (local, mtime), apache.APLOG_DEBUG)
-            return mod_python.apache.DECLINED
+            print("InstantMirror: %s is up to date %d" % (local, mtime), file=environ['wsgi.errors'])
+            return FileApp(local)(environ, start_response)
 
     # We are about to download the upstream URL and copy to the client; set up
     # relevant headers
+    response_headers = []
     if ctype:
-        req.content_type = ctype
+        response_headers.append(("Content-Type", ctype))
     if clen:
-        req.headers_out["Content-Length"] = clen
+        response_headers.append(("Content-Length", clen))
     else:
         clen = 0
-    req.headers_out["Last-Modified"] = rfc822.formatdate(mtime)
 
     # If a range was requested, just return that but don't write anything to disk
     if reqrange:
         if crange:
-            req.headers_out["Content-Range"] = crange
-            req.status = mod_python.apache.HTTP_PARTIAL_CONTENT
+            response_headers.append(("Content-Range", crange))
+        body = bytearray()
         while True:
             data = o.read(4096)
             if len(data) < 1:
                 break
             try:
-                req.write(data)
+                body.extend(data)
             except IOError:
                 break
-
-        return mod_python.apache.OK
+        res = Response(status = 206, headerlist = response_headers, body = bytes(body))
+        res.last_modified = mtime
+        return res(environ, start_response)
 
     # Download and serve file
     tmpname = "%s.tmp.%x" % (local, hash(local))
-    f = open(tmpname, "a+", 4096)
+    f = open(tmpname, "ab+", 4096)
     # Start at the beginning if already being written to
     f.seek(0)
 
+    body = bytearray()
     # This bit of complicated goop lets us optimize the case where
     # another instance of InstantMirror.py is already downloading the
     # URL from upstream: the other instance acts as the master,
@@ -234,8 +244,8 @@ def handler(req):
     # implementation is pretty lame and the slave is throttled by the
     # download speed of the master's client.
     if tryflock(f):
-        req.log_error("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
-            local, hash(local), int(clen), mtime), apache.APLOG_DEBUG)
+        print("InstantMirror: master on %s.tmp.%x, clen = %d, mtime = %d" % (
+            local, hash(local), int(clen), mtime), file=environ['wsgi.errors'])
         # Master mode: download the upstream URL, store data locally and
         # copy data to the client
         while True:
@@ -243,7 +253,7 @@ def handler(req):
                 data = o.read(4096)
                 if len(data) < 1:
                     break
-                req.write(data)
+                body.extend(data)
                 f.write(data)
             except:
                 # Something bad happened like a timeout or client closed connection, cleanup
@@ -251,7 +261,8 @@ def handler(req):
                 os.unlink(tmpname)
                 traceback.print_exc(file=sys.stderr)
                 sys.stderr.flush()
-                return mod_python.apache.DECLINED
+                exc = HTTPError()
+                return exc(environ, start_response)
         f.close()
         if os.path.exists(local):
             os.unlink(local)
@@ -268,14 +279,14 @@ def handler(req):
         else:
             os.utime(local, (mtime,) * 2)
     else:
-        req.log_error("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
-            local, hash(local), int(clen)), apache.APLOG_DEBUG)
+        print("InstantMirror: slave on %s.tmp.%x, clen = %d" % (
+            local, hash(local), int(clen)), file=environ['wsgi.errors'])
         # We are the slave, read from the file
         pos = 0
         while pos < int(clen):
             data = f.read(4096)
             try:
-                req.write(data)
+                body.extend(data)
             except IOError:
                 break
             pos += len(data)
@@ -283,11 +294,12 @@ def handler(req):
             if len(data) == 0:
                 # See if the master has gone away, and if so abort
                 if tryflock(f):
-                    req.log_error("InstantMirror: slave exiting at pos = %d, clen = %d" % (
-                        pos, int(clen)), apache.APLOG_ERR)
+                    print("InstantMirror: slave exiting at pos = %d, clen = %d" % (pos, int(clen)), file=environ['wsgi.errors'])
                     break
                 # Sleep for a bit to avoid spinning
                 time.sleep(0.01)
         f.close()
 
-    return mod_python.apache.OK
+    res = Response(status = 200, headerlist = response_headers, body = bytes(body))
+    res.last_modified = mtime
+    return res(environ, start_response)
