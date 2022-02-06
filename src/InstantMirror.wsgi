@@ -12,16 +12,18 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #
+# Copyright (c) 2022 Orion Poplawski <orion@nwra.com>
 # Copyright (c) 2007 Arastra, Inc.
 
-import mod_wsgi
 from webob import Request, Response
 from webob.exc import HTTPError, HTTPGatewayTimeout, HTTPNotFound, HTTPTemporaryRedirect
 from webob.static import FileApp
 import base64
 import http.client
 import ssl
-import urllib.request, urllib.error, urllib.parse
+import urllib.request
+import urllib.error
+import urllib.parse
 import os
 import time
 import calendar
@@ -56,23 +58,6 @@ and does not deal with query strings (the part of the URL after the ?)
 at all.
 """
 
-class HTTPSClientAuthHandler(urllib.request.HTTPSHandler):
-    def __init__(self, key, cert, context=None, cafile=None, capath=None):
-        if cafile:
-            context = ssl._create_stdlib_context(cert_reqs=ssl.CERT_REQUIRED,
-                                                 cafile=cafile,
-                                                 capath=capath)
-        urllib.request.HTTPSHandler.__init__(self, context=context, check_hostname=True)
-        self.key = key
-        self.cert = cert
-    def https_open(self, req):
-        #Rather than pass in a reference to a connection class, we pass in
-        # a reference to a function which, for all intents and purposes,
-        # will behave as a constructor
-        return self.do_open(self.getConnection, req, context=self._context, check_hostname=self._check_hostname)
-    def getConnection(self, host, **http_conn_args):
-        return http.client.HTTPSConnection(host, key_file=self.key, cert_file=self.cert, **http_conn_args)
-
 
 def tryflock(f):
     try:
@@ -83,32 +68,61 @@ def tryflock(f):
             return False
         raise
 
+
+class HTTPSClientAuthHandler(urllib.request.HTTPSHandler):
+    def __init__(self, key, cert, context=None, cafile=None, capath=None):
+        if cafile:
+            context = ssl._create_stdlib_context(cert_reqs=ssl.CERT_REQUIRED,
+                                                 cafile=cafile,
+                                                 capath=capath)
+        urllib.request.HTTPSHandler.__init__(self, context=context, check_hostname=True)
+        self.key = key
+        self.cert = cert
+
+    def https_open(self, req):
+        # Rather than pass in a reference to a connection class, we pass in
+        # a reference to a function which, for all intents and purposes,
+        # will behave as a constructor
+        return self.do_open(self.getConnection, req, context=self._context,
+                            check_hostname=self._check_hostname)
+
+    def getConnection(self, host, **http_conn_args):
+        return http.client.HTTPSConnection(host, key_file=self.key, cert_file=self.cert,
+                                           **http_conn_args)
+
+
 class MasterIterable(object):
     def __init__(self, input, output, local, mtime):
         self.input = input
         self.output = output
         self.local = local
         self.mtime = mtime
+
     def __iter__(self):
         return MasterIterator(self.input, self.output, self.local, self.mtime)
+
     def __del__(self):
         if os.path.exists(self.output.name):
             os.unlink(self.output.name)
 
+
 class MasterIterator(object):
     chunk_size = 4096
+
     def __init__(self, input, output, local, mtime):
         self.input = input
         self.output = output
         self.local = local
         self.mtime = mtime
+
     def __iter__(self):
         return self
+
     def next(self):
         try:
             data = self.input.read(self.chunk_size)
             self.output.write(data)
-        except:
+        except Exception:
             # Something bad happened like a timeout or client closed connection, cleanup
             self.output.close()
             os.unlink(self.output.name)
@@ -134,25 +148,30 @@ class MasterIterator(object):
                 os.utime(self.local, (self.mtime,) * 2)
             raise StopIteration
         return data
-    __next__ = next # py3 compat
+
+    __next__ = next  # py3 compat
 
 
 class SlaveIterable(object):
     def __init__(self, file, clen):
         self.file = file
         self.clen = clen
+
     def __iter__(self):
         return SlaveIterator(self.file, self.clen)
 
 
 class SlaveIterator(object):
     chunk_size = 4096
+
     def __init__(self, file, clen):
         self.file = file
         self.clen = clen
         self.pos = 0
+
     def __iter__(self):
         return self
+
     def next(self):
         # Stop when we have reached the expected size of the file
         if self.pos >= self.clen:
@@ -166,12 +185,14 @@ class SlaveIterator(object):
         if len(data) == 0:
             # See if the master has gone away, and if so abort
             if tryflock(self.file):
-                print("InstantMirror: slave exiting at pos = %d" % (self.pos), file=environ['wsgi.errors'])
+                # TODO - This should be file=environ['wsgi.errors']
+                print("InstantMirror: slave exiting at pos = %d" % (self.pos), file=sys.stderr)
                 raise StopIteration
             # Sleep for a bit to avoid spinning
             time.sleep(0.01)
         return data
-    __next__ = next # py3 compat
+
+    __next__ = next  # py3 compat
 
 
 def application(environ, start_response):
@@ -182,7 +203,7 @@ def application(environ, start_response):
     # Allow local mirror to set robots policy
     if req.path.endswith("/robots.txt"):
         if "InstantMirror.norobots" in environ:
-            res = Response(status = 200, body = "User-agent: *\nDisallow: /\n")
+            res = Response(status=200, body="User-agent: *\nDisallow: /\n")
             return res(environ, start_response)
         else:
             # Use local robots.txt if it exists
@@ -193,12 +214,13 @@ def application(environ, start_response):
 
     # Treat .rpm files as immutable, serve it if it exists
     if req.path.endswith(".rpm") and os.path.exists(local):
-        #print("InstantMirror: Immediately serving %s" % (local), file=environ['wsgi.errors'])
         return FileApp(local)(environ, start_response)
 
     # Setup client SSL if needed
     if 'InstantMirror.cert' in environ:
-        cert_handler = HTTPSClientAuthHandler(environ['InstantMirror.key'], environ['InstantMirror.cert'], cafile=environ['InstantMirror.cacert'])
+        cert_handler = HTTPSClientAuthHandler(environ['InstantMirror.key'],
+                                              environ['InstantMirror.cert'],
+                                              cafile=environ['InstantMirror.cacert'])
         opener = urllib.request.build_opener(cert_handler)
         urllib.request.install_opener(opener)
 
@@ -208,7 +230,8 @@ def application(environ, start_response):
             req.path.replace("/index.html", "/")
         upreq = urllib.request.Request(upstream)
         if 'InstantMirror.username' in environ:
-            base64string = base64.encodestring('%s:%s' % (environ['InstantMirror.username'], 'null')).replace('\n', '')
+            base64string = base64.encodestring('%s:%s' % (environ['InstantMirror.username'],
+                                                          'null')).replace('\n', '')
             upreq.add_header("Authorization", "Basic %s" % base64string)
         reqrange = None
         # Pass along headers like "Accept", but not:
@@ -227,7 +250,8 @@ def application(environ, start_response):
         else:
             o = urllib.request.urlopen(upreq, timeout=10)
         if 'Last-Modified' in o.headers:
-            mtime = calendar.timegm(time.strptime(o.headers['Last-Modified'], '%a, %d %b %Y %H:%M:%S GMT'))
+            mtime = calendar.timegm(time.strptime(o.headers['Last-Modified'],
+                                                  '%a, %d %b %Y %H:%M:%S GMT'))
         else:
             mtime = calendar.timegm(time.gmtime())
         ctype = o.headers.get("Content-Type")
@@ -239,9 +263,9 @@ def application(environ, start_response):
         print("InstantMirror info: %s" % e.info(), file=environ['wsgi.errors'])
         print("InstantMirror reponse: %s" % e.read(), file=environ['wsgi.errors'])
         exc = HTTPError()
-        # TODO - This doesn't work to change exc 
+        # TODO - This doesn't work to change exc
         exc.code = e.code
-        exc.detail = e.info 
+        exc.detail = e.info
         return exc(environ, start_response)
     except urllib.error.URLError as e:
         # Handle timeouts
@@ -249,12 +273,12 @@ def application(environ, start_response):
             return HTTPGatewayTimeout()(environ, start_response)
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        exc = HTTPError() 
-        # TODO - This doesn't work to change exc 
+        exc = HTTPError()
+        # TODO - This doesn't work to change exc
         exc.code = e.code
-        exc.detail = e.info 
+        exc.detail = e.info
         return exc(environ, start_response)
-    except Exception as e:
+    except Exception:
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         return HTTPError()(environ, start_response)
@@ -270,8 +294,6 @@ def application(environ, start_response):
 
         if not req.path.endswith("/index.html"):
             local = os.path.join(local, "index.html")
-        print("InstantMirror: local=%s" %
-                      (local), file=environ['wsgi.errors'])
 
     dir = os.path.dirname(local)
     # Try to avoid creating an already existing directory
@@ -289,7 +311,8 @@ def application(environ, start_response):
         stat = os.stat(local)
         if int(stat.st_mtime) == mtime:
             # and (clen is None or stat.st_size == clen):
-            print("InstantMirror: %s is up to date %d" % (local, mtime), file=environ['wsgi.errors'])
+            print("InstantMirror: %s is up to date %d" % (local, mtime),
+                  file=environ['wsgi.errors'])
             return FileApp(local)(environ, start_response)
 
     # We are about to download the upstream URL and copy to the client; set up
@@ -315,7 +338,7 @@ def application(environ, start_response):
                 body.extend(data)
             except IOError:
                 break
-        res = Response(status = 206, headerlist = response_headers, body = bytes(body))
+        res = Response(status=206, headerlist=response_headers, body=bytes(body))
         res.last_modified = mtime
         return res(environ, start_response)
 
@@ -342,6 +365,6 @@ def application(environ, start_response):
         # We are the slave, read from the file
         app_iter = SlaveIterable(f, int(clen))
 
-    res = Response(status = 200, headerlist = response_headers, app_iter = app_iter)
+    res = Response(status=200, headerlist=response_headers, app_iter=app_iter)
     res.last_modified = mtime
     return res(environ, start_response)
