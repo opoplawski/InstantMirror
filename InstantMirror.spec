@@ -45,7 +45,7 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 * Tue Jan 18 2022 Orion Poplawski 0.14-1
 - Update to 0.14
 
-* Mon Oct  1 2021 Orion Poplawski 0.13-1
+* Fri Oct  1 2021 Orion Poplawski 0.13-1
 - Update to 0.13
 
 * Mon Aug 30 2021 Orion Poplawski 0.12-1
