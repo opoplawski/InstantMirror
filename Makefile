@@ -16,8 +16,8 @@ install:
 	### Install into DESTDIR
 	
 	# mod_wsgi script
-	mkdir -p ${DESTDIR}/usr/share/InstantMiror
-	install -m 644 src/InstantMirror.wsgi ${DESTDIR}/usr/share/InstantMiror
+	mkdir -p ${DESTDIR}/usr/share/InstantMirror
+	install -m 644 src/InstantMirror.wsgi ${DESTDIR}/usr/share/InstantMirror
 	# %config(noreplace) Apache configuration file
 	mkdir -p ${DESTDIR}/etc/httpd/conf.d/
 	[ ! -e ${DESTDIR}/etc/httpd/conf.d/InstantMirror.conf ] && install -m 644 src/InstantMirror.httpd.conf ${DESTDIR}/etc/httpd/conf.d/InstantMirror.conf || :
