@@ -254,7 +254,6 @@ def application(environ, start_response):
                                                   '%a, %d %b %Y %H:%M:%S GMT'))
         else:
             mtime = calendar.timegm(time.gmtime())
-        ctype = o.headers.get("Content-Type")
         clen = o.headers.get("Content-Length")
         crange = o.headers.get("Content-Range")
         isdir = o.url.endswith("/")
@@ -318,8 +317,10 @@ def application(environ, start_response):
     # We are about to download the upstream URL and copy to the client; set up
     # relevant headers
     response_headers = []
-    if ctype:
-        response_headers.append(("Content-Type", ctype))
+    # Copy some upstream headers to the response
+    for header in ['Content-Type', 'ETag']:
+        if header in o.headers:
+            response_headers.append((header, o.headers[header]))
     if clen:
         response_headers.append(("Content-Length", clen))
     else:
