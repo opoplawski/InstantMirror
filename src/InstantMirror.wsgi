@@ -273,9 +273,6 @@ def application(environ, start_response):
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         exc = HTTPError()
-        # TODO - This doesn't work to change exc
-        exc.code = e.code
-        exc.detail = e.info
         return exc(environ, start_response)
     except Exception:
         traceback.print_exc(file=sys.stderr)
