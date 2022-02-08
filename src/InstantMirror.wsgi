@@ -107,7 +107,7 @@ class MasterIterable(object):
 
 
 class MasterIterator(object):
-    chunk_size = 4096
+    chunk_size = 16384
 
     def __init__(self, input, output, local, mtime):
         self.input = input
@@ -162,7 +162,7 @@ class SlaveIterable(object):
 
 
 class SlaveIterator(object):
-    chunk_size = 4096
+    chunk_size = 16384
 
     def __init__(self, file, clen):
         self.file = file
@@ -329,7 +329,7 @@ def application(environ, start_response):
             response_headers.append(("Content-Range", crange))
         body = bytearray()
         while True:
-            data = o.read(4096)
+            data = o.read(16384)
             if len(data) < 1:
                 break
             try:
@@ -341,7 +341,7 @@ def application(environ, start_response):
         return res(environ, start_response)
 
     # Download and serve file
-    f = open("%s.tmp.%x" % (local, hash(local)), "ab+", 4096)
+    f = open("%s.tmp.%x" % (local, hash(local)), "ab+", 16384)
     # Start at the beginning if already being written to
     f.seek(0)
 
