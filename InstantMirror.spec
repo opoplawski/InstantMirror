@@ -11,6 +11,7 @@ Source0:        https://github.com/opoplawski/InstantMirror/archive/%{version}/%
 BuildArch:      noarch
 BuildRequires:  python3-devel
 
+Requires:       python3-mod_wsgi
 Requires:       python3-webob
 
 %description
