@@ -16,7 +16,8 @@
 # Copyright (c) 2007 Arastra, Inc.
 
 from webob import Request, Response
-from webob.exc import HTTPError, HTTPGatewayTimeout, HTTPNotFound, HTTPTemporaryRedirect
+from webob.exc import ( HTTPError, HTTPGatewayTimeout, HTTPNotFound, HTTPTemporaryRedirect,
+    status_map )
 from webob.static import FileApp
 import base64
 import http.client
@@ -230,8 +231,8 @@ def application(environ, start_response):
             req.path.replace("/index.html", "/")
         upreq = urllib.request.Request(upstream)
         if 'InstantMirror.username' in environ:
-            base64string = base64.encodestring('%s:%s' % (environ['InstantMirror.username'],
-                                                          'null')).replace('\n', '')
+            base64string = base64.encodestring(('%s:%s' % (environ['InstantMirror.username'],
+                                                          'null')).replace('\n', '').encode())
             upreq.add_header("Authorization", "Basic %s" % base64string)
         reqrange = None
         # Pass along headers like "Accept", but not:
@@ -258,13 +259,7 @@ def application(environ, start_response):
         crange = o.headers.get("Content-Range")
         isdir = o.url.endswith("/")
     except urllib.error.HTTPError as e:
-        print("InstantMirror status: %s" % e.code, file=environ['wsgi.errors'])
-        print("InstantMirror info: %s" % e.info(), file=environ['wsgi.errors'])
-        print("InstantMirror reponse: %s" % e.read(), file=environ['wsgi.errors'])
-        exc = HTTPError()
-        # TODO - This doesn't work to change exc
-        exc.code = e.code
-        exc.detail = e.info
+        exc = status_map[e.code](body_template=e.read().decode())
         return exc(environ, start_response)
     except urllib.error.URLError as e:
         # Handle timeouts
@@ -272,7 +267,7 @@ def application(environ, start_response):
             return HTTPGatewayTimeout()(environ, start_response)
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        exc = HTTPError()
+        exc = status_map[e.code]()
         return exc(environ, start_response)
     except Exception:
         traceback.print_exc(file=sys.stderr)
