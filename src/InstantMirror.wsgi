@@ -231,8 +231,9 @@ def application(environ, start_response):
             req.path.replace("/index.html", "/")
         upreq = urllib.request.Request(upstream)
         if 'InstantMirror.username' in environ:
-            base64string = base64.encodestring(('%s:%s' % (environ['InstantMirror.username'],
-                                                          'null')).replace('\n', '').encode())
+            base64string = base64.b64encode(('%s:null' %
+                                            (environ['InstantMirror.username'])).replace('\n', '')
+                                            .encode()).decode()
             upreq.add_header("Authorization", "Basic %s" % base64string)
         reqrange = None
         # Pass along headers like "Accept", but not:
