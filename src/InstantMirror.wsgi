@@ -21,6 +21,7 @@ from webob.exc import ( HTTPError, HTTPGatewayTimeout, HTTPNotFound, HTTPTempora
 from webob.static import FileApp
 import base64
 import http.client
+from pathlib import Path
 import ssl
 import urllib.request
 import urllib.error
@@ -213,9 +214,29 @@ def application(environ, start_response):
             else:
                 return HTTPNotFound()(environ, start_response)
 
-    # Treat .rpm files as immutable, serve it if it exists
-    if req.path.endswith(".rpm") and os.path.exists(local):
-        return FileApp(local)(environ, start_response)
+    # Treat .cdiff, .rpm, and .zck files as immutable, serve it if it exists
+    immutable = ( '.cdiff', '.rpm', '.zck' )
+    # Allow overriding the immutable list
+    if "InstantMirror.immutable" in environ:
+        immutable = tuple(environ['InstantMirror.immutable'].split(','))
+    # Set a minimum age before checking upstream
+    min_age = 3600
+    if "InstantMirror.min_age" in environ:
+        min_age = int(environ['InstantMirror.min_age'])
+    check_local = Path(local + '.check')
+    if os.path.exists(local):
+        if req.path.endswith(immutable):
+            print("InstantMirror: %s is immutable, serving local copy" % (local))
+            return FileApp(local)(environ, start_response)
+        else:
+            try:
+                check_stat = os.stat(check_local)
+            except FileNotFoundError:
+                check_local.touch()
+            else:
+                if (calendar.timegm(time.gmtime()) - int(check_stat.st_mtime)) < min_age:
+                    print("InstantMirror: %s %d - %d is less than %d seconds since last check, serving local copy" % (local, calendar.timegm(time.gmtime()), int(check_stat.st_mtime), min_age))
+                    return FileApp(local)(environ, start_response)
 
     # Setup client SSL if needed
     if 'InstantMirror.cert' in environ:
@@ -300,6 +321,9 @@ def application(environ, start_response):
                 raise
     # If the local file exists and is up-to-date, serve it to the client
     if not isdir and os.path.exists(local):
+        # Update the timestamp of the check file
+        check_local.touch()
+
         stat = os.stat(local)
         if int(stat.st_mtime) == mtime:
             # and (clen is None or stat.st_size == clen):
