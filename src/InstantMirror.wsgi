@@ -268,7 +268,7 @@ def application(environ, start_response):
             return HTTPGatewayTimeout()(environ, start_response)
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        exc = status_map[e.code]()
+        exc = HTTPError()
         return exc(environ, start_response)
     except Exception:
         traceback.print_exc(file=sys.stderr)
