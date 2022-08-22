@@ -356,7 +356,7 @@ def application(environ, start_response):
                 body.extend(data)
             except IOError:
                 break
-        res = Response(status=206, headerlist=response_headers, body=bytes(body))
+        res = Response(status=o.status, headerlist=response_headers, body=bytes(body))
         res.last_modified = mtime
         return res(environ, start_response)
 
