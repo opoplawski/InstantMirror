@@ -1,5 +1,5 @@
 Name:           InstantMirror
-Version:        0.23
+Version:        0.24
 Release:        1%{?dist}
 Summary:        Reverse Proxy Cache for Static HTTP Mirroring
 
@@ -40,6 +40,9 @@ filenames on the server filesystem.  This allows flexibility to do things like:
 %config(noreplace) %{_sysconfdir}/httpd/conf.d/InstantMirror.conf
 
 %changelog
+* Mon Aug 22 2022 Orion Poplawski 0.24-1
+- Return upstream response status for range requests
+
 * Fri Jun 24 2022 Orion Poplawski 0.23-1
 - Add .zck to default immutable fiiles
 - Allow immutable file list to be overriden
